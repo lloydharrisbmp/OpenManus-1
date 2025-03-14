@@ -1,20 +1,29 @@
 """
-Caching service for the financial planning application.
+Enhanced caching service for the financial planning application.
 
-This module provides caching functionality to improve performance by storing
-expensive operation results such as financial data requests or complex calculations.
+This module provides advanced caching functionality with asynchronous concurrency,
+partial success/failure tracking, robust error handling, extended logging, 
+and improved flexibility in caching design.
 """
 
 import os
 import json
 import pickle
 import hashlib
-from typing import Any, Dict, Optional, Callable, TypeVar, List, Union
 import time
-from datetime import datetime, timedelta
-from functools import wraps
 import asyncio
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional, Callable, TypeVar, List, Union, Tuple
+from functools import wraps
 from pathlib import Path
+import logging
+from dataclasses import dataclass
+
+try:
+    import aiofiles
+    AIOFILES_AVAILABLE = True
+except ImportError:
+    AIOFILES_AVAILABLE = False
 
 from app.logger import logger
 
@@ -22,238 +31,277 @@ from app.logger import logger
 T = TypeVar('T')
 K = TypeVar('K')
 
+@dataclass
+class CacheResult:
+    """Structured result object for cache operations."""
+    success: bool
+    value: Optional[Any] = None
+    error: Optional[str] = None
+    ttl: Optional[int] = None
+    hit: bool = False
+    source: str = "cache"
+
 class CacheService:
     """
-    Service for caching expensive operations like financial data retrieval.
-    
-    Supports in-memory and file-based caching with configurable expiration.
+    Advanced cache service with TTL support and memory management.
+    Features:
+    - TTL (Time To Live) support
+    - Memory usage monitoring
+    - Async operations
+    - Cache statistics
+    - Automatic cleanup
     """
-    
-    def __init__(self, cache_dir: str = "cache", default_ttl: int = 3600):
-        """
-        Initialize the cache service.
-        
-        Args:
-            cache_dir: Directory to store cached files
-            default_ttl: Default time-to-live for cache entries in seconds (1 hour default)
-        """
-        self.in_memory_cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_dir = cache_dir
+
+    def __init__(
+        self,
+        max_size: int = 1000,
+        default_ttl: int = 3600,
+        cleanup_interval: int = 300
+    ):
+        self.cache: Dict[str, Dict] = {}
+        self.max_size = max_size
         self.default_ttl = default_ttl
-        
-        # Create cache directory if it doesn't exist
-        os.makedirs(self.cache_dir, exist_ok=True)
-        
-        # Create subdirectories for different types of data
-        for subdir in ["financial", "market", "reports", "portfolio"]:
-            os.makedirs(os.path.join(self.cache_dir, subdir), exist_ok=True)
-    
-    def _get_cache_key(self, prefix: str, *args, **kwargs) -> str:
-        """
-        Generate a cache key from function arguments.
-        
-        Args:
-            prefix: Prefix for the cache key (usually function name)
-            *args, **kwargs: Function arguments
-            
-        Returns:
-            A unique cache key as string
-        """
-        # Convert args and kwargs to a stable string representation
-        key_parts = [prefix]
-        
-        for arg in args:
-            if isinstance(arg, (list, dict)):
-                key_parts.append(str(sorted(str(arg).items())) if isinstance(arg, dict) else str(sorted(arg)))
-            else:
-                key_parts.append(str(arg))
-        
-        for k, v in sorted(kwargs.items()):
-            if isinstance(v, (list, dict)):
-                key_parts.append(f"{k}:{str(sorted(str(v).items())) if isinstance(v, dict) else str(sorted(v))}")
-            else:
-                key_parts.append(f"{k}:{v}")
-        
-        # Generate a hash of the key parts
-        key = hashlib.md5(":".join(key_parts).encode()).hexdigest()
-        return f"{prefix}_{key}"
-    
-    def get(self, key: str) -> Optional[Any]:
-        """
-        Get a value from the in-memory cache.
-        
-        Args:
-            key: Cache key
-            
-        Returns:
-            Cached value or None if not found or expired
-        """
-        if key in self.in_memory_cache:
-            entry = self.in_memory_cache[key]
-            # Check if entry has expired
-            if entry['expiry'] > time.time():
-                return entry['value']
-            else:
-                # Remove expired entry
-                del self.in_memory_cache[key]
-        return None
-    
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
-        """
-        Set a value in the in-memory cache.
-        
-        Args:
-            key: Cache key
-            value: Value to cache
-            ttl: Time-to-live in seconds, uses default_ttl if None
-        """
-        expiry = time.time() + (ttl if ttl is not None else self.default_ttl)
-        self.in_memory_cache[key] = {
-            'value': value,
-            'expiry': expiry
+        self.cleanup_interval = cleanup_interval
+        self.stats = {
+            'hits': 0,
+            'misses': 0,
+            'evictions': 0,
+            'size': 0
         }
-    
-    def file_get(self, key: str, category: str = "financial") -> Optional[Any]:
-        """
-        Get a value from the file cache.
-        
-        Args:
-            key: Cache key
-            category: Category for organizing cache files
-            
-        Returns:
-            Cached value or None if not found or expired
-        """
-        file_path = os.path.join(self.cache_dir, category, f"{key}.pkl")
-        if os.path.exists(file_path):
+        self._setup_logging()
+        self._start_cleanup_task()
+
+    def _setup_logging(self) -> None:
+        """Configure logging."""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        self.logger = logging.getLogger("CacheService")
+
+    def _start_cleanup_task(self) -> None:
+        """Start the background cleanup task."""
+        asyncio.create_task(self._cleanup_loop())
+
+    async def _cleanup_loop(self) -> None:
+        """Background task to clean up expired entries."""
+        while True:
             try:
-                with open(file_path, 'rb') as f:
-                    entry = pickle.load(f)
-                
-                # Check if entry has expired
-                if entry['expiry'] > time.time():
-                    return entry['value']
-                else:
-                    # Remove expired entry
-                    os.remove(file_path)
-            except (pickle.PickleError, OSError, EOFError) as e:
-                logger.warning(f"Error reading cache file {file_path}: {e}")
-        return None
-    
-    def file_set(self, key: str, value: Any, category: str = "financial", ttl: Optional[int] = None) -> None:
+                await self._cleanup_expired()
+                await asyncio.sleep(self.cleanup_interval)
+            except Exception as e:
+                self.logger.error(f"Error in cleanup loop: {e}")
+
+    async def _cleanup_expired(self) -> None:
+        """Remove expired entries from cache."""
+        now = datetime.now()
+        expired_keys = [
+            key for key, value in self.cache.items()
+            if value['expires_at'] <= now
+        ]
+        
+        for key in expired_keys:
+            await self.delete(key)
+            self.stats['evictions'] += 1
+
+    async def set(
+        self,
+        key: str,
+        value: Any,
+        ttl: Optional[int] = None
+    ) -> CacheResult:
         """
-        Set a value in the file cache.
+        Set a value in the cache with optional TTL.
         
         Args:
             key: Cache key
-            value: Value to cache
-            category: Category for organizing cache files
-            ttl: Time-to-live in seconds, uses default_ttl if None
-        """
-        file_path = os.path.join(self.cache_dir, category, f"{key}.pkl")
-        try:
-            expiry = time.time() + (ttl if ttl is not None else self.default_ttl)
-            entry = {
-                'value': value,
-                'expiry': expiry
-            }
-            with open(file_path, 'wb') as f:
-                pickle.dump(entry, f)
-        except (pickle.PickleError, OSError) as e:
-            logger.warning(f"Error writing to cache file {file_path}: {e}")
-    
-    def clear(self, category: Optional[str] = None) -> None:
-        """
-        Clear the cache.
-        
-        Args:
-            category: If provided, only clear this category, otherwise clear all
-        """
-        # Clear in-memory cache
-        self.in_memory_cache = {}
-        
-        # Clear file cache
-        if category:
-            dir_path = os.path.join(self.cache_dir, category)
-            if os.path.exists(dir_path):
-                for file_name in os.listdir(dir_path):
-                    if file_name.endswith('.pkl'):
-                        os.remove(os.path.join(dir_path, file_name))
-        else:
-            for category_dir in os.listdir(self.cache_dir):
-                category_path = os.path.join(self.cache_dir, category_dir)
-                if os.path.isdir(category_path):
-                    for file_name in os.listdir(category_path):
-                        if file_name.endswith('.pkl'):
-                            os.remove(os.path.join(category_path, file_name))
-    
-    def cached(self, ttl: Optional[int] = None, category: str = "financial", use_file_cache: bool = False):
-        """
-        Decorator for caching function results.
-        
-        Args:
-            ttl: Time-to-live in seconds
-            category: Category for organizing cache files
-            use_file_cache: Whether to use file-based cache
+            value: Value to store
+            ttl: Time to live in seconds (optional)
             
         Returns:
-            Decorator function
+            CacheResult object
         """
-        def decorator(func):
-            @wraps(func)
-            def wrapper(*args, **kwargs):
-                # Generate cache key
-                cache_key = self._get_cache_key(func.__name__, *args, **kwargs)
-                
-                # Try to get from cache
-                if use_file_cache:
-                    result = self.file_get(cache_key, category)
-                else:
-                    result = self.get(cache_key)
-                
-                if result is not None:
-                    return result
-                
-                # Call the function and cache the result
-                result = func(*args, **kwargs)
-                
-                if use_file_cache:
-                    self.file_set(cache_key, result, category, ttl)
-                else:
-                    self.set(cache_key, result, ttl)
-                
-                return result
-            
-            @wraps(func)
-            async def async_wrapper(*args, **kwargs):
-                # Generate cache key
-                cache_key = self._get_cache_key(func.__name__, *args, **kwargs)
-                
-                # Try to get from cache
-                if use_file_cache:
-                    result = self.file_get(cache_key, category)
-                else:
-                    result = self.get(cache_key)
-                
-                if result is not None:
-                    return result
-                
-                # Call the function and cache the result
-                result = await func(*args, **kwargs)
-                
-                if use_file_cache:
-                    self.file_set(cache_key, result, category, ttl)
-                else:
-                    self.set(cache_key, result, ttl)
-                
-                return result
-            
-            # Return appropriate wrapper based on whether the function is async
-            if asyncio.iscoroutinefunction(func):
-                return async_wrapper
-            return wrapper
+        try:
+            # Check cache size
+            if len(self.cache) >= self.max_size:
+                await self._evict_oldest()
+
+            # Calculate expiration
+            ttl = ttl if ttl is not None else self.default_ttl
+            expires_at = datetime.now() + timedelta(seconds=ttl)
+
+            # Store value with metadata
+            self.cache[key] = {
+                'value': value,
+                'created_at': datetime.now(),
+                'expires_at': expires_at,
+                'ttl': ttl
+            }
+
+            self.stats['size'] = len(self.cache)
+            return CacheResult(success=True, value=value, ttl=ttl)
+
+        except Exception as e:
+            self.logger.error(f"Error setting cache value: {e}")
+            return CacheResult(success=False, error=str(e))
+
+    async def get(self, key: str) -> CacheResult:
+        """
+        Get a value from the cache.
         
-        return decorator
+        Args:
+            key: Cache key
+            
+        Returns:
+            CacheResult object
+        """
+        try:
+            if key not in self.cache:
+                self.stats['misses'] += 1
+                return CacheResult(success=False, error="Key not found", hit=False)
+
+            entry = self.cache[key]
+            
+            # Check if expired
+            if entry['expires_at'] <= datetime.now():
+                await self.delete(key)
+                self.stats['misses'] += 1
+                return CacheResult(success=False, error="Key expired", hit=False)
+
+            self.stats['hits'] += 1
+            return CacheResult(
+                success=True,
+                value=entry['value'],
+                ttl=entry['ttl'],
+                hit=True
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error getting cache value: {e}")
+            return CacheResult(success=False, error=str(e))
+
+    async def delete(self, key: str) -> CacheResult:
+        """
+        Delete a value from the cache.
+        
+        Args:
+            key: Cache key
+            
+        Returns:
+            CacheResult object
+        """
+        try:
+            if key in self.cache:
+                del self.cache[key]
+                self.stats['size'] = len(self.cache)
+                return CacheResult(success=True)
+            return CacheResult(success=False, error="Key not found")
+
+        except Exception as e:
+            self.logger.error(f"Error deleting cache value: {e}")
+            return CacheResult(success=False, error=str(e))
+
+    async def clear(self) -> CacheResult:
+        """Clear all values from the cache."""
+        try:
+            self.cache.clear()
+            self.stats['size'] = 0
+            return CacheResult(success=True)
+
+        except Exception as e:
+            self.logger.error(f"Error clearing cache: {e}")
+            return CacheResult(success=False, error=str(e))
+
+    async def _evict_oldest(self) -> None:
+        """Evict the oldest entry from the cache."""
+        if not self.cache:
+            return
+
+        oldest_key = min(
+            self.cache.keys(),
+            key=lambda k: self.cache[k]['created_at']
+        )
+        await self.delete(oldest_key)
+        self.stats['evictions'] += 1
+
+    async def get_stats(self) -> CacheResult:
+        """Get cache statistics."""
+        try:
+            stats = {
+                **self.stats,
+                'hit_ratio': (
+                    self.stats['hits'] /
+                    (self.stats['hits'] + self.stats['misses'])
+                    if (self.stats['hits'] + self.stats['misses']) > 0
+                    else 0
+                ),
+                'memory_usage': len(json.dumps(self.cache))
+            }
+            return CacheResult(success=True, value=stats)
+
+        except Exception as e:
+            self.logger.error(f"Error getting cache stats: {e}")
+            return CacheResult(success=False, error=str(e))
+
+    async def get_keys(self) -> CacheResult:
+        """Get all cache keys."""
+        try:
+            return CacheResult(success=True, value=list(self.cache.keys()))
+        except Exception as e:
+            self.logger.error(f"Error getting cache keys: {e}")
+            return CacheResult(success=False, error=str(e))
+
+    async def get_ttl(self, key: str) -> CacheResult:
+        """
+        Get the remaining TTL for a key.
+        
+        Args:
+            key: Cache key
+            
+        Returns:
+            CacheResult object with remaining TTL in seconds
+        """
+        try:
+            if key not in self.cache:
+                return CacheResult(success=False, error="Key not found")
+
+            entry = self.cache[key]
+            remaining = (entry['expires_at'] - datetime.now()).total_seconds()
+            
+            if remaining <= 0:
+                await self.delete(key)
+                return CacheResult(success=False, error="Key expired")
+
+            return CacheResult(success=True, value=int(remaining))
+
+        except Exception as e:
+            self.logger.error(f"Error getting TTL: {e}")
+            return CacheResult(success=False, error=str(e))
+
+    async def update_ttl(self, key: str, ttl: int) -> CacheResult:
+        """
+        Update the TTL for a key.
+        
+        Args:
+            key: Cache key
+            ttl: New TTL in seconds
+            
+        Returns:
+            CacheResult object
+        """
+        try:
+            if key not in self.cache:
+                return CacheResult(success=False, error="Key not found")
+
+            entry = self.cache[key]
+            entry['ttl'] = ttl
+            entry['expires_at'] = datetime.now() + timedelta(seconds=ttl)
+            
+            return CacheResult(success=True, ttl=ttl)
+
+        except Exception as e:
+            self.logger.error(f"Error updating TTL: {e}")
+            return CacheResult(success=False, error=str(e))
 
 
 # Create a global instance for use throughout the application

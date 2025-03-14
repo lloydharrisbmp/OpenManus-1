@@ -1,50 +1,29 @@
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional
 from datetime import datetime
 import aiohttp
 import pandas as pd
 import numpy as np
 from app.tool.base import BaseTool
-import os
-import logging
-from pathlib import Path
-from pydantic import BaseModel, Field
-
-logger = logging.getLogger(__name__)
-
-class MarketDataConfig(BaseModel):
-    """Configuration for fetching and analyzing market data."""
-    symbols: List[str] = Field(default_factory=list)
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    include_benchmark: bool = False
-    benchmark_symbol: str = "SPY"
 
 class MarketDataTool(BaseTool):
-    """
-    Tool for fetching and analyzing market data from various sources.
-    Allows scenario-based analysis, optional benchmark comparisons, and data caching.
-    """
-    name: str = "market_data_tool"
-    description: str = "Fetches and analyzes market data from various sources"
-
+    """Tool for fetching and analyzing market data."""
+    
+    name = "market_data_tool"
+    description = "Fetches and analyzes market data from various sources"
+    
     async def execute(self, **kwargs) -> Dict[str, Any]:
-        try:
-            config = MarketDataConfig(**kwargs)
-            logger.info(f"Running MarketDataTool with config: {config}")
-            
-            data = await self._fetch_market_data(config)
-            analysis = self._analyze_market_data(data, config)
-
-            return {
-                "data": data,
-                "analysis": analysis
-            }
-        except Exception as e:
-            logger.error(f"Error in MarketDataTool: {e}", exc_info=True)
-            return {
-                "error": str(e),
-                "success": False
-            }
+        """Execute market data analysis."""
+        symbols = kwargs.get("symbols", [])
+        start_date = kwargs.get("start_date", "")
+        end_date = kwargs.get("end_date", "")
+        
+        data = await self._fetch_market_data(symbols, start_date, end_date)
+        analysis = self._analyze_market_data(data)
+        
+        return {
+            "data": data,
+            "analysis": analysis
+        }
 
 class PropertyAnalysisTool(BaseTool):
     """Tool for analyzing property investments."""
