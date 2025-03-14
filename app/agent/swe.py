@@ -12,6 +12,7 @@ from app.tool.financial_tools import (
     ReportGeneratorTool,
     TaxOptimizationTool,
 )
+from app.tool.document_analyzer import DocumentAnalyzerTool
 
 
 class FinancialPlanningAgent(ToolCallAgent):
@@ -36,6 +37,7 @@ class FinancialPlanningAgent(ToolCallAgent):
         PortfolioOptimizationTool(),
         TaxOptimizationTool(),
         ReportGeneratorTool(),
+        DocumentAnalyzerTool(),
         Bash(),
         StrReplaceEditor(),
         Terminate()

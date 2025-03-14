@@ -12,6 +12,7 @@ from app.tool.financial_tools import (
     PortfolioOptimizationTool,
     ReportGeneratorTool
 )
+from app.tool.document_analyzer import DocumentAnalyzerTool
 
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "TaxOptimizationTool",
     "PortfolioOptimizationTool",
     "ReportGeneratorTool",
+    "DocumentAnalyzerTool",
 ]

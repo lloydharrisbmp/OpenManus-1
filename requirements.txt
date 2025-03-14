@@ -21,8 +21,14 @@ pydantic_core~=2.27.2
 colorama~=0.4.6
 playwright~=1.49.1
 
+# Web UI dependencies
+websockets~=12.0
+python-multipart~=0.0.9
+jinja2~=3.1.3
+
 # Financial analysis packages
 yfinance~=0.2.36
 pandas~=2.2.1
 matplotlib~=3.8.3
 scipy~=1.12.0  # For portfolio optimization calculations
+PyPDF2~=3.0.1  # For PDF document analysis
