@@ -3,11 +3,11 @@ from typing import List
 from pydantic import Field
 
 from app.agent.toolcall import ToolCallAgent
-from app.prompt.swe import NEXT_STEP_TEMPLATE, SYSTEM_PROMPT
+from app.prompt.financial_planner import NEXT_STEP_TEMPLATE, SYSTEM_PROMPT
 from app.tool import Bash, StrReplaceEditor, Terminate, ToolCollection
 
 
-class SWEAgent(ToolCallAgent):
+class FinancialPlanningAgent(ToolCallAgent):
     """An agent that implements the SWEAgent paradigm for executing code and natural conversations."""
 
     name: str = "swe"
@@ -21,7 +21,7 @@ class SWEAgent(ToolCallAgent):
     )
     special_tool_names: List[str] = Field(default_factory=lambda: [Terminate().name])
 
-    max_steps: int = 30
+    max_steps: int = 10
 
     bash: Bash = Field(default_factory=Bash)
     working_dir: str = "."
