@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Australian Financial Planning AI</title>
+    <title>Financial Planning AI</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/main.css">
@@ -114,112 +114,102 @@
     </style>
 </head>
 <body>
-    <div class="container-fluid p-0">
-        <!-- Australian-themed header -->
-        <div class="aus-header py-3">
-            <div class="container">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h1 class="text-white m-0">
-                        <i class="fas fa-chart-line me-2"></i>
-                        Australian Financial Planning AI
-                    </h1>
-                    <div>
-                        <button id="newConversationBtn" class="btn btn-outline-light">
-                            <i class="fas fa-plus-circle me-2"></i>New Conversation
-                        </button>
+    <div class="app-container">
+        <!-- Sidebar with progress tracker and files -->
+        <div class="sidebar">
+            <!-- Project progress tracker -->
+            <div class="sidebar-section">
+                <h2 class="sidebar-section-title">Project Progress</h2>
+                <div class="progress-tracker" id="progressTracker">
+                    <!-- Progress sections will be dynamically generated here -->
+                </div>
+            </div>
+            
+            <!-- Generated Documents -->
+            <div class="sidebar-section">
+                <h2 class="sidebar-section-title">Generated Documents</h2>
+                <div class="files-section" id="filesSection">
+                    <p class="text-muted text-center empty-files-message" id="emptyFilesMessage">No documents available yet</p>
+                    <div class="file-list" id="fileList">
+                        <!-- Files will be added here -->
                     </div>
                 </div>
             </div>
         </div>
-
-        <div class="container mt-4 chat-container">
-            <div class="row">
-                <!-- Chat and input area -->
-                <div class="col-md-8">
-                    <div class="chat-messages" id="chatMessages">
-                        <div class="bot-message">
-                            <div class="message-content">
-                                <p>G'day! I'm your Australian financial planning AI assistant. I specialize in providing advice for high net worth clients with complex financial structures.</p>
-                                <p>How can I assist you today? You can ask about:</p>
-                                <ul>
-                                    <li>Tax optimization strategies for individuals and SMSFs</li>
-                                    <li>ASX and international investment portfolio analysis</li>
-                                    <li>Complex entity structures (trusts, companies, SMSFs)</li>
-                                    <li>Estate planning and succession strategies</li>
-                                    <li>Regulatory compliance with ASIC and ATO requirements</li>
-                                </ul>
-                                <p>You can also upload relevant financial documents for analysis.</p>
-                            </div>
-                            <div class="message-time">
-                                <small>Just now</small>
-                            </div>
-                        </div>
-                        <div class="typing-indicator" id="typingIndicator">
-                            <span></span>
-                            <span></span>
-                            <span></span>
+        
+        <!-- Main chat area -->
+        <div class="main-content">
+            <!-- Header -->
+            <div class="app-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h1 class="m-0 fs-4">
+                        <i class="fas fa-chart-line me-2"></i>
+                        Financial Planning AI
+                    </h1>
+                    <button id="newConversationBtn" class="action-btn">
+                        <i class="fas fa-plus-circle"></i>
+                        New Conversation
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Chat Container -->
+            <div class="chat-container">
+                <!-- Messages Area -->
+                <div class="chat-messages" id="chatMessages">
+                    <div class="bot-message">
+                        <div class="message-content">
+                            <p>Hello! I'm your financial planning AI assistant. I specialize in providing advice for high net worth clients with complex financial structures.</p>
+                            <p>How can I assist you today? You can ask about:</p>
+                            <ul>
+                                <li>Tax optimization strategies for individuals and SMSFs</li>
+                                <li>ASX and international investment portfolio analysis</li>
+                                <li>Complex entity structures (trusts, companies, SMSFs)</li>
+                                <li>Estate planning and succession strategies</li>
+                                <li>Regulatory compliance with ASIC and ATO requirements</li>
+                            </ul>
+                            <p>You can also upload relevant financial documents for analysis.</p>
                         </div>
                     </div>
-                    
-                    <form id="fileUploadForm" class="mb-3 mt-4">
-                        <div class="input-group mb-3">
-                            <input type="file" class="form-control" id="fileInput" multiple>
-                            <button class="btn btn-outline-primary upload-btn" type="submit" id="uploadButton">
-                                <i class="fas fa-cloud-upload-alt me-2"></i>Upload
-                            </button>
-                        </div>
-                        <div class="progress upload-progress" id="uploadProgress">
-                            <div class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
-                        </div>
-                        <div class="file-preview" id="filePreview"></div>
-                    </form>
-
-                    <form id="chatForm">
-                        <div class="input-group">
-                            <textarea class="form-control" id="messageInput" placeholder="Enter your financial planning query here..." rows="3"></textarea>
-                            <button class="btn btn-primary send-btn" type="submit">
-                                <i class="fas fa-paper-plane me-2"></i>Send
-                            </button>
-                        </div>
-                    </form>
+                    <div class="typing-indicator" id="typingIndicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
                 </div>
                 
-                <!-- Files panel -->
-                <div class="col-md-4">
-                    <div class="card">
-                        <div class="card-header bg-primary text-white">
-                            <i class="fas fa-file-alt me-2"></i>Generated Documents
-                        </div>
-                        <div class="card-body files-panel" id="filesPanel">
-                            <p class="text-muted text-center" id="noFilesMessage">No documents available yet</p>
-                            <ul class="list-group file-list" id="fileList">
-                                <!-- Files will be added here -->
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    <div class="card mt-4">
-                        <div class="card-header bg-secondary text-white">
-                            <i class="fas fa-info-circle me-2"></i>Tips
-                        </div>
-                        <div class="card-body">
-                            <p><strong>Try these example queries:</strong></p>
-                            <div class="example-queries">
-                                <button class="btn btn-sm btn-outline-secondary mb-2 example-query">
-                                    Analyze current ASX market trends
-                                </button>
-                                <button class="btn btn-sm btn-outline-secondary mb-2 example-query">
-                                    SMSF tax optimization strategy
-                                </button>
-                                <button class="btn btn-sm btn-outline-secondary mb-2 example-query">
-                                    Create a portfolio review report
-                                </button>
-                                <button class="btn btn-sm btn-outline-secondary mb-2 example-query">
-                                    Franking credits explained
-                                </button>
+                <!-- Input Area -->
+                <div class="chat-input-container">
+                    <form id="chatForm" class="chat-form">
+                        <div class="chat-actions">
+                            <form id="fileUploadForm" class="d-flex align-items-center">
+                                <label for="fileInput" class="action-btn mb-0">
+                                    <i class="fas fa-paperclip"></i>
+                                    Attach Files
+                                </label>
+                                <input type="file" id="fileInput" multiple style="display: none;">
+                            </form>
+                            <div class="progress upload-progress mx-2" id="uploadProgress" style="width: 100px;">
+                                <div class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
                             </div>
                         </div>
-                    </div>
+                        
+                        <div class="file-preview" id="filePreview"></div>
+                        
+                        <div class="input-area">
+                            <textarea class="message-input" id="messageInput" placeholder="Enter your financial planning query here..." rows="1"></textarea>
+                            <button class="send-btn" type="submit">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="example-queries mt-2">
+                            <button type="button" class="example-query">Analyze current ASX market trends</button>
+                            <button type="button" class="example-query">SMSF tax optimization strategy</button>
+                            <button type="button" class="example-query">Create a portfolio review report</button>
+                            <button type="button" class="example-query">Estate planning guide</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -232,6 +222,10 @@
         let uploadedFiles = [];
         // WebSocket connection
         let socket;
+        // Project progress tracking
+        let projectSections = [];
+        let currentSection = null;
+        let completedTasks = [];
         
         document.addEventListener('DOMContentLoaded', function() {
             connectWebSocket();
@@ -256,10 +250,36 @@
                     scrollToBottom();
                 } else if (event.data === '[RESET]') {
                     resetChatMessages();
+                    resetProgressTracker();
                 } else if (event.data.startsWith('[FILES]')) {
                     // Update file list
                     updateFileList(event.data.substring(7));
+                } else if (event.data.startsWith('[PROGRESS]')) {
+                    // Update progress tracker
+                    updateProgressTracker(event.data.substring(10));
                 } else {
+                    // Extract section information if message contains it
+                    const sectionMatch = event.data.match(/## Working on: (.+?)(?:\r?\n|$)/);
+                    const taskMatch = event.data.match(/✓ Task completed: (.+?)(?:\r?\n|$)/);
+                    
+                    if (sectionMatch) {
+                        // Update current section
+                        currentSection = sectionMatch[1].trim();
+                        if (!projectSections.includes(currentSection)) {
+                            projectSections.push(currentSection);
+                            updateProgressUI();
+                        }
+                    }
+                    
+                    if (taskMatch) {
+                        // Add to completed tasks
+                        const task = taskMatch[1].trim();
+                        if (!completedTasks.includes(task)) {
+                            completedTasks.push(task);
+                            updateProgressUI();
+                        }
+                    }
+                    
                     addBotMessage(event.data);
                 }
             };
@@ -287,10 +307,18 @@
                 }
             });
             
-            // File upload form
-            document.getElementById('fileUploadForm').addEventListener('submit', function(e) {
-                e.preventDefault();
-                uploadFiles();
+            // Auto-resize textarea
+            const messageInput = document.getElementById('messageInput');
+            messageInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+            });
+            
+            // File upload handling
+            document.getElementById('fileInput').addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    uploadFiles();
+                }
             });
             
             // New conversation button
@@ -305,6 +333,7 @@
                 button.addEventListener('click', function() {
                     const query = this.textContent.trim();
                     document.getElementById('messageInput').value = query;
+                    document.getElementById('messageInput').focus();
                 });
             });
         }
@@ -340,14 +369,9 @@
             const messageElement = document.createElement('div');
             messageElement.className = 'user-message';
             
-            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
             messageElement.innerHTML = `
                 <div class="message-content">
                     <p>${escapeHtml(message)}</p>
-                </div>
-                <div class="message-time">
-                    <small>${timestamp}</small>
                 </div>
             `;
             
@@ -360,39 +384,40 @@
             const typingIndicator = document.getElementById('typingIndicator');
             const chatMessages = document.getElementById('chatMessages');
             
-            // Check if a bot message already exists and is being built
-            const lastMessage = chatMessages.lastElementChild.previousElementSibling;
-            
-            if (lastMessage && lastMessage.classList.contains('bot-message') && 
-                lastMessage.getAttribute('data-building') === 'true') {
-                // Append to existing message
-                const contentDiv = lastMessage.querySelector('.message-content');
-                contentDiv.innerHTML = markdownToHtml(contentDiv.innerHTML + message);
-            } else {
-                // Create new message
-                const messageElement = document.createElement('div');
-                messageElement.className = 'bot-message';
-                messageElement.setAttribute('data-building', 'true');
-                
-                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                
-                messageElement.innerHTML = `
-                    <div class="message-content">
-                        ${markdownToHtml(message)}
-                    </div>
-                    <div class="message-time">
-                        <small>${timestamp}</small>
-                    </div>
-                `;
-                
-                // Insert before typing indicator
-                chatMessages.insertBefore(messageElement, typingIndicator);
+            // Check if message is thinking steps
+            if (message.includes('🤔 Thinking Process:')) {
+                const thinkingElement = document.createElement('div');
+                thinkingElement.className = 'thinking-steps';
+                thinkingElement.innerHTML = `${markdownToHtml(message)}`;
+                chatMessages.insertBefore(thinkingElement, typingIndicator);
+                scrollToBottom();
+                return;
             }
             
+            // Regular bot message
+            const messageElement = document.createElement('div');
+            messageElement.className = 'bot-message';
+            
+            messageElement.innerHTML = `
+                <div class="message-content">
+                    ${markdownToHtml(message)}
+                </div>
+            `;
+            
+            // Insert before typing indicator
+            chatMessages.insertBefore(messageElement, typingIndicator);
             scrollToBottom();
         }
         
         function markdownToHtml(text) {
+            // Preserve existing HTML tags (especially links)
+            // First, temporarily replace HTML tags to protect them
+            let preservedHtml = [];
+            text = text.replace(/<([^>]+)>/g, function(match) {
+                preservedHtml.push(match);
+                return `__HTML_PLACEHOLDER_${preservedHtml.length - 1}__`;
+            });
+            
             // Convert markdown-like syntax to HTML
             // Code blocks
             text = text.replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>');
@@ -402,8 +427,21 @@
             text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             // Italic
             text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-            // Links
+            // Links (only convert markdown links, not HTML ones)
             text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+            // Headers
+            text = text.replace(/^### (.+)$/gm, '<h5>$1</h5>');
+            text = text.replace(/^## (.+)$/gm, '<h4>$1</h4>');
+            text = text.replace(/^# (.+)$/gm, '<h3>$1</h3>');
+            // Lists
+            text = text.replace(/^- (.+)$/gm, '<li>$1</li>');
+            text = text.replace(/(<li>.*<\/li>\n*)+/g, '<ul>$&</ul>');
+            
+            // Restore HTML tags
+            text = text.replace(/__HTML_PLACEHOLDER_(\d+)__/g, function(match, index) {
+                return preservedHtml[parseInt(index)];
+            });
+            
             return text;
         }
         
@@ -518,7 +556,7 @@
             welcomeMessage.className = 'bot-message';
             welcomeMessage.innerHTML = `
                 <div class="message-content">
-                    <p>G'day! I'm your Australian financial planning AI assistant. I specialize in providing advice for high net worth clients with complex financial structures.</p>
+                    <p>Hello! I'm your financial planning AI assistant. I specialize in providing advice for high net worth clients with complex financial structures.</p>
                     <p>How can I assist you today? You can ask about:</p>
                     <ul>
                         <li>Tax optimization strategies for individuals and SMSFs</li>
@@ -529,56 +567,154 @@
                     </ul>
                     <p>You can also upload relevant financial documents for analysis.</p>
                 </div>
-                <div class="message-time">
-                    <small>Just now</small>
-                </div>
             `;
             
             // Recreate typing indicator
-            typingIndicator.style.display = 'none';
+            const newTypingIndicator = document.createElement('div');
+            newTypingIndicator.className = 'typing-indicator';
+            newTypingIndicator.id = 'typingIndicator';
+            newTypingIndicator.innerHTML = `
+                <span></span>
+                <span></span>
+                <span></span>
+            `;
+            newTypingIndicator.style.display = 'none';
+            
             chatMessages.appendChild(welcomeMessage);
-            chatMessages.appendChild(typingIndicator);
+            chatMessages.appendChild(newTypingIndicator);
             
             // Clear uploaded files
             uploadedFiles = [];
             document.getElementById('filePreview').innerHTML = '';
         }
         
+        function resetProgressTracker() {
+            projectSections = [];
+            currentSection = null;
+            completedTasks = [];
+            updateProgressUI();
+        }
+        
         function updateFileList(filesData) {
             try {
                 const fileList = document.getElementById('fileList');
-                const noFilesMessage = document.getElementById('noFilesMessage');
+                const emptyFilesMessage = document.getElementById('emptyFilesMessage');
                 const data = JSON.parse(filesData);
                 
                 if (data.files && data.files.length > 0) {
-                    noFilesMessage.style.display = 'none';
+                    emptyFilesMessage.style.display = 'none';
                     fileList.innerHTML = '';
                     
                     data.files.forEach(file => {
                         const fileName = file.name;
                         const filePath = file.path;
                         
-                        const li = document.createElement('li');
-                        li.className = 'list-group-item d-flex justify-content-between align-items-center';
-                        li.innerHTML = `
-                            <span>
-                                <i class="fas fa-file-alt me-2"></i>
-                                ${escapeHtml(fileName)}
-                            </span>
-                            <a href="/download/${encodeURIComponent(fileName)}" class="btn btn-sm btn-outline-primary" download>
-                                <i class="fas fa-download"></i>
-                            </a>
+                        // Determine file type icon and color
+                        let fileIcon = 'file-alt';
+                        if (fileName.endsWith('.pdf')) fileIcon = 'file-pdf';
+                        else if (fileName.endsWith('.doc') || fileName.endsWith('.docx')) fileIcon = 'file-word';
+                        else if (fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) fileIcon = 'file-excel';
+                        else if (fileName.endsWith('.md')) fileIcon = 'file-alt';
+                        else if (fileName.endsWith('.html')) fileIcon = 'file-code';
+                        else if (fileName.endsWith('.txt')) fileIcon = 'file-alt';
+                        
+                        // Create proper URL for websites
+                        let fileUrl = `/download/${encodeURIComponent(fileName)}`;
+                        let target = "_self";
+                        
+                        // If it's a website, link directly to the generated path
+                        if (file.type === 'website' && filePath.includes('websites')) {
+                            const relativePath = filePath.split('client_documents/')[1];
+                            fileUrl = `/generated/${relativePath}`;
+                            target = "_blank"; // Open websites in new tab
+                        }
+                        
+                        const fileItem = document.createElement('div');
+                        fileItem.className = 'file-item';
+                        fileItem.innerHTML = `
+                            <div class="file-icon">
+                                <i class="fas fa-${fileIcon}"></i>
+                            </div>
+                            <div class="file-info">
+                                <div class="file-name">${escapeHtml(fileName)}</div>
+                                <div class="file-meta">
+                                    ${new Date().toLocaleDateString()}
+                                </div>
+                            </div>
+                            <div class="file-actions">
+                                <a href="${fileUrl}" class="file-action-btn" target="${target}">
+                                    <i class="fas fa-${file.type === 'website' ? 'external-link-alt' : 'download'}"></i>
+                                </a>
+                            </div>
                         `;
                         
-                        fileList.appendChild(li);
+                        fileList.appendChild(fileItem);
                     });
                 } else {
-                    noFilesMessage.style.display = 'block';
+                    emptyFilesMessage.style.display = 'block';
                     fileList.innerHTML = '';
                 }
             } catch (e) {
                 console.error('Error parsing files data:', e);
             }
+        }
+        
+        function updateProgressUI() {
+            const progressTracker = document.getElementById('progressTracker');
+            progressTracker.innerHTML = '';
+            
+            if (projectSections.length === 0) {
+                progressTracker.innerHTML = '<p class="text-muted">No active project</p>';
+                return;
+            }
+            
+            projectSections.forEach(section => {
+                const isActive = section === currentSection;
+                const sectionTasks = completedTasks.filter(task => 
+                    task.toLowerCase().includes(section.toLowerCase()));
+                
+                const sectionElement = document.createElement('div');
+                sectionElement.className = 'progress-section';
+                
+                // Section header with status indicator
+                let statusClass = 'incomplete';
+                if (isActive) statusClass = 'in-progress';
+                if (sectionTasks.length > 0 && !isActive) statusClass = 'complete';
+                
+                sectionElement.innerHTML = `
+                    <div class="progress-section-header">
+                        <div class="progress-section-title">
+                            <i class="fas fa-folder${isActive ? '-open' : ''}"></i>
+                            ${escapeHtml(section)}
+                        </div>
+                        <div class="progress-section-indicator ${statusClass}">
+                            ${sectionTasks.length > 0 ? 
+                              `<i class="fas fa-${isActive ? 'spinner fa-spin' : 'check'}"></i>` : 
+                              sectionTasks.length}
+                        </div>
+                    </div>
+                `;
+                
+                // If there are tasks, show them
+                if (sectionTasks.length > 0) {
+                    const tasksElement = document.createElement('div');
+                    tasksElement.className = 'progress-section-tasks';
+                    
+                    sectionTasks.forEach(task => {
+                        const taskElement = document.createElement('div');
+                        taskElement.className = 'progress-task task-complete';
+                        taskElement.innerHTML = `
+                            <i class="fas fa-check-circle"></i>
+                            ${escapeHtml(task)}
+                        `;
+                        tasksElement.appendChild(taskElement);
+                    });
+                    
+                    sectionElement.appendChild(tasksElement);
+                }
+                
+                progressTracker.appendChild(sectionElement);
+            });
         }
         
         function fetchExistingFiles() {
@@ -592,26 +728,6 @@
                 .catch(error => {
                     console.error('Error fetching files:', error);
                 });
-        }
-
-        function appendMessage(message, isUser = false) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = isUser ? 'user-message' : 'bot-message';
-            
-            // Check if this is a thinking steps message
-            if (!isUser && message.startsWith('🤔 Thinking Process:')) {
-                messageDiv.className = 'thinking-steps';
-            }
-            
-            // Handle markdown formatting
-            if (typeof markdownit !== 'undefined') {
-                messageDiv.innerHTML = md.render(message);
-            } else {
-                messageDiv.textContent = message;
-            }
-            
-            messagesContainer.appendChild(messageDiv);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
     </script>
 </body>

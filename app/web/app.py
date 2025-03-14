@@ -3,6 +3,7 @@ import asyncio
 import uuid
 import webbrowser
 import time
+import re
 from pathlib import Path
 from typing import List, Optional, Dict
 
@@ -25,11 +26,18 @@ app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
 # Set up Jinja2 templates
 templates = Jinja2Templates(directory="app/web/templates")
 
+# Mount the client_documents directory to serve generated websites
+app.mount("/generated", StaticFiles(directory="client_documents"), name="generated")
+
 # Directories for uploads and generated files
 UPLOAD_DIR = "uploads"
 CLIENT_DOCS_DIR = "client_documents"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(CLIENT_DOCS_DIR, exist_ok=True)
+
+# Ensure subdirectories exist
+for subdir in ["markdown", "text", "websites", "reports"]:
+    os.makedirs(os.path.join(CLIENT_DOCS_DIR, subdir), exist_ok=True)
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -38,6 +46,9 @@ class ConnectionManager:
         self.agents: Dict[str, FinancialPlanningAgent] = {}
         self.conversation_history: Dict[str, List[Dict]] = {}
         self.generated_files: Dict[str, List[str]] = {}
+        self.project_sections: Dict[str, List[str]] = {}
+        self.current_sections: Dict[str, str] = {}
+        self.completed_tasks: Dict[str, List[str]] = {}
 
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
@@ -48,6 +59,10 @@ class ConnectionManager:
             self.conversation_history[client_id] = []
         if client_id not in self.generated_files:
             self.generated_files[client_id] = []
+        if client_id not in self.project_sections:
+            self.project_sections[client_id] = []
+        if client_id not in self.completed_tasks:
+            self.completed_tasks[client_id] = []
     
     def disconnect(self, client_id: str):
         if client_id in self.active_connections:
@@ -63,6 +78,12 @@ class ConnectionManager:
             self.agents[client_id] = FinancialPlanningAgent()
         if client_id in self.conversation_history:
             self.conversation_history[client_id] = []
+        if client_id in self.project_sections:
+            self.project_sections[client_id] = []
+        if client_id in self.current_sections:
+            self.current_sections.pop(client_id, None)
+        if client_id in self.completed_tasks:
+            self.completed_tasks[client_id] = []
     
     def track_generated_file(self, client_id: str, file_path: str):
         """Track a file generated for a specific client."""
@@ -72,14 +93,100 @@ class ConnectionManager:
     
     async def check_for_new_files(self, client_id: str):
         """Check for new files in the client documents directory."""
-        if not os.path.exists(CLIENT_DOCS_DIR):
-            return
-            
-        files = [f for f in os.listdir(CLIENT_DOCS_DIR) if os.path.isfile(os.path.join(CLIENT_DOCS_DIR, f))]
+        file_count_before = len(self.generated_files.get(client_id, []))
         
-        for file in files:
-            file_path = os.path.join(CLIENT_DOCS_DIR, file)
-            self.track_generated_file(client_id, file_path)
+        # Check main directory and all subdirectories
+        for root, _, files in os.walk(CLIENT_DOCS_DIR):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if os.path.isfile(file_path):
+                    self.track_generated_file(client_id, file_path)
+                    
+        file_count_after = len(self.generated_files.get(client_id, []))
+        
+        # If new files were found, send update to client
+        if file_count_after > file_count_before:
+            await self.send_files_update(client_id)
+    
+    async def send_files_update(self, client_id: str):
+        """Send updated file list to the client."""
+        if client_id in self.active_connections:
+            files_data = await self.get_file_list(client_id)
+            await self.send_message(client_id, f"[FILES]{files_data}")
+    
+    async def get_file_list(self, client_id: str) -> str:
+        """Get formatted file list for a client."""
+        if client_id not in self.generated_files:
+            return "{\"files\":[]}"
+        
+        file_list = []
+        for file_path in self.generated_files[client_id]:
+            if os.path.exists(file_path):
+                file_name = os.path.basename(file_path)
+                file_type = self._get_file_type(file_path)
+                file_list.append({
+                    "name": file_name,
+                    "path": file_path,
+                    "type": file_type
+                })
+        
+        import json
+        return json.dumps({"files": file_list})
+    
+    def _get_file_type(self, file_path: str) -> str:
+        """Determine the type of file based on extension or directory."""
+        ext = os.path.splitext(file_path)[1].lower()
+        
+        if "markdown" in file_path:
+            return "markdown"
+        elif "websites" in file_path:
+            return "website"
+        elif "reports" in file_path:
+            return "report"
+        elif ext == ".md":
+            return "markdown"
+        elif ext == ".html":
+            return "website"
+        elif ext == ".txt":
+            return "text"
+        elif ext == ".pdf":
+            return "document"
+        else:
+            return "other"
+    
+    def extract_sections_and_tasks(self, client_id: str, message: str):
+        """Extract project sections and tasks from agent messages."""
+        # Extract section headers (## Working on: Section Name)
+        section_match = re.search(r'## Working on: (.+?)(?:\r?\n|$)', message)
+        if section_match:
+            section = section_match.group(1).strip()
+            if client_id in self.project_sections and section not in self.project_sections[client_id]:
+                self.project_sections[client_id].append(section)
+                self.current_sections[client_id] = section
+        
+        # Extract completed tasks (✓ Task completed: Task Name)
+        task_matches = re.findall(r'✓ Task completed: (.+?)(?:\r?\n|$)', message)
+        for task in task_matches:
+            task = task.strip()
+            if client_id in self.completed_tasks and task not in self.completed_tasks[client_id]:
+                self.completed_tasks[client_id].append(task)
+    
+    async def send_progress_update(self, client_id: str):
+        """Send progress update to the client."""
+        if client_id in self.active_connections:
+            import json
+            progress_data = {
+                "sections": self.project_sections.get(client_id, []),
+                "current_section": self.current_sections.get(client_id, None),
+                "completed_tasks": self.completed_tasks.get(client_id, [])
+            }
+            await self.send_message(client_id, f"[PROGRESS]{json.dumps(progress_data)}")
+    
+    def format_website_url(self, file_path: str) -> str:
+        """Format the website URL for viewing through the FastAPI server."""
+        # Convert absolute path to relative path from client_documents
+        rel_path = os.path.relpath(file_path, "client_documents")
+        return f"/generated/{rel_path}"
     
     async def process_message(self, client_id: str, message: str, file_paths: Optional[List[str]] = None):
         """Process a message with the financial planning agent and send responses via websocket."""
@@ -100,7 +207,19 @@ class ConnectionManager:
         
         # Process with agent
         agent = self.agents[client_id]
+        
+        # Add standard sections to help with progress tracking
+        sections_to_extract = ["Research", "Analysis", "Document Creation"]
+        if not self.project_sections.get(client_id, []):
+            self.project_sections[client_id] = sections_to_extract
+            await self.send_progress_update(client_id)
+        
+        # Process the message
         response = await agent.process_message(message)
+        
+        # Extract sections and tasks from the response
+        self.extract_sections_and_tasks(client_id, response)
+        await self.send_progress_update(client_id)
         
         # Send thinking steps first
         if hasattr(agent, 'thinking_steps') and agent.thinking_steps:
@@ -108,14 +227,21 @@ class ConnectionManager:
             await self.send_message(client_id, thinking_steps)
             agent.thinking_steps = []  # Clear thinking steps after sending
         
+        # Check for new files
+        await self.check_for_new_files(client_id)
+        
+        # Make website URLs clickable in the chat
+        if "WEBSITE GENERATED SUCCESSFULLY" in response:
+            # The URL is already in the response from the tool
+            # Just make sure it's properly formatted for the chat
+            response = response.replace("→ http://", "→ <a href='http://")
+            response = response.replace(".html", ".html' target='_blank'>View Website</a>")
+        
         # Send the final response
         await self.send_message(client_id, response)
         
         # Add to conversation history
         self.conversation_history[client_id].append({"role": "assistant", "content": response})
-        
-        # Check for new files
-        await self.check_for_new_files(client_id)
 
 
 manager = ConnectionManager()
@@ -148,15 +274,25 @@ async def upload_files(files: List[UploadFile] = File(...)):
 
 @app.get("/download/{file_name}")
 async def download_file(file_name: str):
-    # Look in both directories
-    for directory in [CLIENT_DOCS_DIR, UPLOAD_DIR]:
-        file_path = os.path.join(directory, file_name)
-        if os.path.exists(file_path):
-            return FileResponse(
-                path=file_path,
-                filename=file_name,
-                media_type="application/octet-stream"
-            )
+    # Look in all possible directories
+    for root, _, files in os.walk(CLIENT_DOCS_DIR):
+        for file in files:
+            if file == file_name:
+                file_path = os.path.join(root, file)
+                return FileResponse(
+                    path=file_path,
+                    filename=file_name,
+                    media_type="application/octet-stream"
+                )
+    
+    # Also check the uploads directory
+    file_path = os.path.join(UPLOAD_DIR, file_name)
+    if os.path.exists(file_path):
+        return FileResponse(
+            path=file_path,
+            filename=file_name,
+            media_type="application/octet-stream"
+        )
     
     # Also check for full paths that were tracked
     for client_id, files in manager.generated_files.items():
@@ -184,12 +320,23 @@ async def get_generated_files(client_id: str):
     for file_path in manager.generated_files[client_id]:
         if os.path.exists(file_path):
             file_name = os.path.basename(file_path)
+            file_type = manager._get_file_type(file_path)
             file_list.append({
                 "name": file_name,
-                "path": file_path
+                "path": file_path,
+                "type": file_type
             })
     
     return JSONResponse(content={"files": file_list})
+
+@app.get("/progress/{client_id}")
+async def get_progress(client_id: str):
+    progress_data = {
+        "sections": manager.project_sections.get(client_id, []),
+        "current_section": manager.current_sections.get(client_id, None),
+        "completed_tasks": manager.completed_tasks.get(client_id, [])
+    }
+    return JSONResponse(content=progress_data)
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
@@ -213,6 +360,14 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
     except Exception as e:
         logger.exception(f"WebSocket error: {str(e)}")
         manager.disconnect(client_id)
+
+@app.get("/view-website/{path:path}")
+async def view_website(path: str):
+    """Serve generated website files."""
+    website_path = os.path.join("client_documents/websites", path)
+    if os.path.exists(website_path):
+        return FileResponse(website_path)
+    raise HTTPException(status_code=404, detail="Website not found")
 
 # Function to automatically open the browser
 def open_browser():

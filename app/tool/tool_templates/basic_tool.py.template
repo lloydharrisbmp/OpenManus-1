@@ -1,0 +1,35 @@
+import os
+from typing import Dict, Any, Optional
+from pydantic import Field
+
+from app.tool.base import BaseTool
+
+class {ToolName}(BaseTool):
+    """Tool for {tool_description}"""
+
+    name: str = "{tool_name}"
+    description: str = "{tool_description}"
+    parameters: dict = {parameters}
+
+    # Add any additional fields needed by the tool
+    {additional_fields}
+
+    async def execute(
+        self,
+        {parameters_args}
+    ) -> Dict[str, Any]:
+        """Execute the tool with the given parameters."""
+        try:
+            # Implement the tool's functionality here
+            {tool_implementation}
+            
+            return {
+                "status": "success",
+                "message": "Operation completed successfully",
+                # Add other result fields as needed
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Error: {str(e)}"
+            }
