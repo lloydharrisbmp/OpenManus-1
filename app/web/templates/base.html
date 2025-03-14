@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}Australian Financial Planning{% endblock %}</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/static/images/favicon.png">
+    
+    <!-- Base CSS -->
+    <link rel="stylesheet" href="/static/css/normalize.css">
+    <link rel="stylesheet" href="/static/css/main.css">
+    
+    <!-- Responsive CSS -->
+    <link rel="stylesheet" href="/static/css/responsive.css">
+    
+    <!-- Theme CSS -->
+    <link rel="stylesheet" href="/static/css/themes/default.css" id="theme-css">
+    
+    <!-- Custom Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Extra CSS for specific pages -->
+    {% block extra_css %}{% endblock %}
+    
+    <!-- Meta tags -->
+    <meta name="description" content="Advanced Australian Financial Planning and Investment Platform">
+    <meta name="author" content="OpenManus Financial AI">
+    <meta name="theme-color" content="#2a5298">
+    
+    <!-- Mobile app capability -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/images/app-icon.png">
+    
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/static/manifest.json">
+    
+    <!-- Base JavaScript -->
+    <script>
+        // Dark mode detection
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+        
+        // Load user theme preference if saved
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            const themeLink = document.getElementById('theme-css');
+            themeLink.href = `/static/css/themes/${savedTheme}.css`;
+        }
+    </script>
+</head>
+<body class="loading">
+    <!-- Page overlay for loading -->
+    <div id="page-loader">
+        <div class="loader-content">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+    
+    <!-- Mobile navigation overlay -->
+    <div class="mobile-nav-overlay"></div>
+    
+    <!-- Sidebar navigation -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <img src="/static/images/logo.svg" alt="Logo" class="sidebar-logo">
+            <button type="button" class="mobile-nav-close" aria-label="Close menu">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <ul class="nav-list">
+                <li class="nav-item">
+                    <a href="/dashboard" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">
+                        <i class="fas fa-home"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/clients" class="nav-link {% if active_page == 'clients' %}active{% endif %}">
+                        <i class="fas fa-users"></i>
+                        <span>Clients</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/portfolios" class="nav-link {% if active_page == 'portfolios' %}active{% endif %}">
+                        <i class="fas fa-chart-pie"></i>
+                        <span>Portfolios</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/market" class="nav-link {% if active_page == 'market' %}active{% endif %}">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Market Analysis</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/tax" class="nav-link {% if active_page == 'tax' %}active{% endif %}">
+                        <i class="fas fa-file-invoice-dollar"></i>
+                        <span>Tax Optimization</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/compliance" class="nav-link {% if active_page == 'compliance' %}active{% endif %}">
+                        <i class="fas fa-clipboard-check"></i>
+                        <span>Compliance</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/reports" class="nav-link {% if active_page == 'reports' %}active{% endif %}">
+                        <i class="fas fa-file-alt"></i>
+                        <span>Reports</span>
+                    </a>
+                </li>
+                {% if user and 'admin' in user.roles %}
+                <li class="nav-item">
+                    <a href="/admin" class="nav-link {% if active_page == 'admin' %}active{% endif %}">
+                        <i class="fas fa-cog"></i>
+                        <span>Administration</span>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <div class="tenant-info">
+                {% if tenant %}
+                <img src="{{ tenant.logo_url or '/static/images/default-tenant.svg' }}" alt="{{ tenant.name }}" class="tenant-logo">
+                <div class="tenant-name">{{ tenant.name }}</div>
+                {% endif %}
+            </div>
+            <div class="app-version">Version 1.0.0</div>
+        </div>
+    </aside>
+    
+    <!-- Main content area -->
+    <main class="main-content">
+        <!-- Top navigation bar -->
+        <header class="navbar">
+            <button type="button" class="navbar-toggle" aria-label="Toggle menu">
+                <i class="fas fa-bars"></i>
+            </button>
+            
+            <div class="navbar-title">
+                {% block page_title %}Dashboard{% endblock %}
+            </div>
+            
+            <div class="navbar-actions">
+                <div class="navbar-search">
+                    <form action="/search" method="get" class="search-form">
+                        <input type="text" name="q" placeholder="Search..." class="search-input">
+                        <button type="submit" class="search-button">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </form>
+                </div>
+                
+                <div class="navbar-notifications dropdown">
+                    <button class="dropdown-toggle" aria-label="Notifications">
+                        <i class="fas fa-bell"></i>
+                        <span class="notification-badge">3</span>
+                    </button>
+                    <div class="dropdown-menu">
+                        <div class="dropdown-header">Notifications</div>
+                        <div class="dropdown-items">
+                            <a href="#" class="dropdown-item">
+                                <div class="notification-item">
+                                    <div class="notification-icon">
+                                        <i class="fas fa-check-circle text-success"></i>
+                                    </div>
+                                    <div class="notification-content">
+                                        <div class="notification-title">Report Generated</div>
+                                        <div class="notification-text">Q3 Performance Report is ready</div>
+                                        <div class="notification-time">10 minutes ago</div>
+                                    </div>
+                                </div>
+                            </a>
+                            <!-- More notification items -->
+                        </div>
+                        <div class="dropdown-footer">
+                            <a href="/notifications">View All</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="navbar-profile dropdown">
+                    <button class="dropdown-toggle" aria-label="User profile">
+                        <img src="/static/images/default-avatar.png" alt="Profile" class="profile-avatar">
+                        <span class="profile-name">{{ user.full_name if user else 'User' }}</span>
+                    </button>
+                    <div class="dropdown-menu">
+                        <div class="dropdown-header">{{ user.full_name if user else 'User' }}</div>
+                        <div class="dropdown-items">
+                            <a href="/profile" class="dropdown-item">
+                                <i class="fas fa-user"></i>
+                                <span>My Profile</span>
+                            </a>
+                            <a href="/settings" class="dropdown-item">
+                                <i class="fas fa-cog"></i>
+                                <span>Settings</span>
+                            </a>
+                            {% if multi_tenant and user_tenants|length > 1 %}
+                            <div class="dropdown-divider"></div>
+                            <div class="dropdown-header">Switch Tenant</div>
+                            {% for t in user_tenants %}
+                            <a href="/switch-tenant/{{ t.tenant_id }}" class="dropdown-item {{ 'active' if tenant and tenant.tenant_id == t.tenant_id else '' }}">
+                                <img src="{{ t.logo_url or '/static/images/default-tenant.svg' }}" alt="{{ t.name }}" class="tenant-icon">
+                                <span>{{ t.name }}</span>
+                            </a>
+                            {% endfor %}
+                            {% endif %}
+                            <div class="dropdown-divider"></div>
+                            <a href="/logout" class="dropdown-item">
+                                <i class="fas fa-sign-out-alt"></i>
+                                <span>Logout</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Page content -->
+        <div class="page-content">
+            <!-- Alerts and messages -->
+            {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                <div class="alert alert-{{ message.type }}">
+                    <i class="fas fa-{{ message.icon }}"></i>
+                    <span>{{ message.text }}</span>
+                    <button type="button" class="alert-close" aria-label="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            <!-- Page-specific content -->
+            {% block content %}
+            <div class="container">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Welcome</h2>
+                    </div>
+                    <div class="card-body">
+                        <p>Welcome to the Australian Financial Planning Platform.</p>
+                    </div>
+                </div>
+            </div>
+            {% endblock %}
+        </div>
+        
+        <!-- Page footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <div class="footer-copyright">
+                    &copy; {{ current_year }} OpenManus Financial AI. All rights reserved.
+                </div>
+                <div class="footer-links">
+                    <a href="/terms">Terms of Service</a>
+                    <a href="/privacy">Privacy Policy</a>
+                    <a href="/help">Help</a>
+                </div>
+            </div>
+        </footer>
+    </main>
+    
+    <!-- Base JavaScript -->
+    <script src="/static/js/main.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    
+    <!-- Real-time updates -->
+    <script src="/static/js/websocket.js"></script>
+    
+    <!-- Page-specific JavaScript -->
+    {% block scripts %}{% endblock %}
+    
+    <!-- Load page -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Remove loading state
+            document.body.classList.remove('loading');
+            document.getElementById('page-loader').style.display = 'none';
+            
+            // Initialize mobile navigation
+            const sidebarToggle = document.querySelector('.navbar-toggle');
+            const sidebar = document.getElementById('sidebar');
+            const mobileNavOverlay = document.querySelector('.mobile-nav-overlay');
+            const mobileNavClose = document.querySelector('.mobile-nav-close');
+            
+            if (sidebarToggle && sidebar) {
+                sidebarToggle.addEventListener('click', function() {
+                    sidebar.classList.toggle('active');
+                });
+            }
+            
+            if (mobileNavOverlay) {
+                mobileNavOverlay.addEventListener('click', function() {
+                    sidebar.classList.remove('active');
+                });
+            }
+            
+            if (mobileNavClose) {
+                mobileNavClose.addEventListener('click', function() {
+                    sidebar.classList.remove('active');
+                });
+            }
+            
+            // Initialize alert dismissal
+            const alertCloseButtons = document.querySelectorAll('.alert-close');
+            if (alertCloseButtons.length) {
+                alertCloseButtons.forEach(function(button) {
+                    button.addEventListener('click', function() {
+                        const alert = button.closest('.alert');
+                        if (alert) {
+                            alert.style.opacity = '0';
+                            setTimeout(function() {
+                                alert.remove();
+                            }, 300);
+                        }
+                    });
+                });
+            }
+        });
+    </script>
+</body>
+</html> 

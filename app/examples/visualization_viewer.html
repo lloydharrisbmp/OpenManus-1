@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReActAgent Visualization Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.3/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .file-selector {
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            flex-grow: 1;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .visualization-section {
+            margin-bottom: 30px;
+            background-color: #fff;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 15px;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 15px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-card {
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #3498db;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        tr:hover {
+            background-color: #f5f7fa;
+        }
+        .success {
+            color: #27ae60;
+        }
+        .failure {
+            color: #e74c3c;
+        }
+        .timeline-item {
+            display: flex;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+        }
+        .timeline-time {
+            width: 100px;
+            font-weight: bold;
+        }
+        .timeline-content {
+            flex-grow: 1;
+        }
+        .timeline-status {
+            width: 80px;
+            text-align: right;
+        }
+        /* JSON Viewer Styles */
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            overflow: auto;
+            max-height: 300px;
+        }
+        .json-key {
+            color: #e74c3c;
+        }
+        .json-string {
+            color: #27ae60;
+        }
+        .json-number {
+            color: #3498db;
+        }
+        .json-boolean {
+            color: #9b59b6;
+        }
+        .json-null {
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>ReActAgent Visualization Viewer</h1>
+            <div>
+                <button id="load-sample-data">Load Sample Data</button>
+            </div>
+        </div>
+
+        <div class="controls">
+            <input type="file" id="file-selector" class="file-selector" accept=".json" multiple>
+            <button id="load-files">Load Files</button>
+        </div>
+
+        <div id="visualization-content">
+            <div class="visualization-section">
+                <h2>Agent Execution Overview</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="success-rate">-</div>
+                        <div class="stat-label">Success Rate</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="total-steps">-</div>
+                        <div class="stat-label">Total Steps</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="avg-step-time">-</div>
+                        <div class="stat-label">Avg. Step Time (ms)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="concurrency">-</div>
+                        <div class="stat-label">Concurrency Level</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="visualization-section">
+                <h2>System Resource Usage</h2>
+                <div class="chart-container">
+                    <canvas id="system-metrics-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="visualization-section">
+                <h2>Tool Performance</h2>
+                <div class="chart-container">
+                    <canvas id="tool-performance-chart"></canvas>
+                </div>
+                <table id="tool-stats-table">
+                    <thead>
+                        <tr>
+                            <th>Tool</th>
+                            <th>Total Calls</th>
+                            <th>Success Rate</th>
+                            <th>Avg. Duration</th>
+                            <th>Priority</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Tool stats will be added here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="visualization-section">
+                <h2>Execution Timeline</h2>
+                <div id="timeline-container">
+                    <!-- Timeline items will be added here -->
+                </div>
+            </div>
+
+            <div class="visualization-section">
+                <h2>Raw Data</h2>
+                <div>
+                    <select id="raw-data-selector">
+                        <option value="">Select a file to view raw data</option>
+                    </select>
+                </div>
+                <pre id="raw-data-display"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let timelineData = null;
+        let toolData = null;
+        let systemMetricsData = null;
+        let charts = {};
+
+        // Initialize charts
+        function initCharts() {
+            // System Metrics Chart
+            const systemCtx = document.getElementById('system-metrics-chart').getContext('2d');
+            charts.systemMetrics = new Chart(systemCtx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'CPU Usage (%)',
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            yAxisID: 'percentage',
+                            tension: 0.2
+                        },
+                        {
+                            label: 'Memory Usage (%)',
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            yAxisID: 'percentage',
+                            tension: 0.2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'second'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        },
+                        percentage: {
+                            type: 'linear',
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Usage (%)'
+                            },
+                            min: 0,
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // Tool Performance Chart
+            const toolCtx = document.getElementById('tool-performance-chart').getContext('2d');
+            charts.toolPerformance = new Chart(toolCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Success Rate (%)',
+                            backgroundColor: '#27ae60',
+                            yAxisID: 'percentage'
+                        },
+                        {
+                            label: 'Failure Rate (%)',
+                            backgroundColor: '#e74c3c',
+                            yAxisID: 'percentage'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Tool'
+                            }
+                        },
+                        percentage: {
+                            type: 'linear',
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Rate (%)'
+                            },
+                            min: 0,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load data from files
+        async function loadFiles(files) {
+            for (const file of files) {
+                try {
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    
+                    if (file.name.includes('timeline')) {
+                        timelineData = data;
+                    } else if (file.name.includes('tools')) {
+                        toolData = data;
+                    } else if (file.name.includes('system_metrics')) {
+                        systemMetricsData = data;
+                    }
+                    
+                    // Add to raw data selector
+                    const option = document.createElement('option');
+                    option.value = file.name;
+                    option.textContent = file.name;
+                    document.getElementById('raw-data-selector').appendChild(option);
+                } catch (error) {
+                    console.error(`Error parsing ${file.name}:`, error);
+                }
+            }
+            
+            // Update visualizations
+            updateVisualizations();
+        }
+
+        // Update all visualizations
+        function updateVisualizations() {
+            updateOverviewStats();
+            updateSystemMetricsChart();
+            updateToolPerformanceChart();
+            updateTimelineView();
+        }
+
+        // Update overview statistics
+        function updateOverviewStats() {
+            if (timelineData) {
+                document.getElementById('total-steps').textContent = timelineData.steps || 0;
+                
+                // Calculate success rate
+                if (timelineData.history && timelineData.history.length > 0) {
+                    const successSteps = timelineData.history.filter(step => step.status === 'success').length;
+                    const successRate = (successSteps / timelineData.history.length * 100).toFixed(1);
+                    document.getElementById('success-rate').textContent = `${successRate}%`;
+                    
+                    // Calculate average step time
+                    const stepTimes = timelineData.history
+                        .filter(step => step.duration)
+                        .map(step => step.duration * 1000); // Convert to ms
+                    
+                    if (stepTimes.length > 0) {
+                        const avgTime = stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length;
+                        document.getElementById('avg-step-time').textContent = avgTime.toFixed(0);
+                    }
+                }
+            }
+            
+            // Set concurrency level
+            if (systemMetricsData && systemMetricsData.agent) {
+                // This is a placeholder - in a real implementation we would get this from agent configuration
+                document.getElementById('concurrency').textContent = '3'; // Default value
+            }
+        }
+
+        // Update system metrics chart
+        function updateSystemMetricsChart() {
+            if (!systemMetricsData || !systemMetricsData.metrics) return;
+            
+            const cpuData = [];
+            const memoryData = [];
+            
+            systemMetricsData.metrics.forEach(metric => {
+                const time = new Date(metric.timestamp);
+                
+                cpuData.push({
+                    x: time,
+                    y: metric.cpu_percent
+                });
+                
+                memoryData.push({
+                    x: time,
+                    y: metric.memory_percent
+                });
+            });
+            
+            charts.systemMetrics.data.datasets[0].data = cpuData;
+            charts.systemMetrics.data.datasets[1].data = memoryData;
+            charts.systemMetrics.update();
+        }
+
+        // Update tool performance chart
+        function updateToolPerformanceChart() {
+            if (!toolData || !toolData.tool_statistics) return;
+            
+            const toolNames = [];
+            const successRates = [];
+            const failureRates = [];
+            
+            // Clear the table
+            const tbody = document.getElementById('tool-stats-table').querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            // For each tool, calculate stats
+            Object.entries(toolData.tool_statistics).forEach(([toolName, stats]) => {
+                toolNames.push(toolName);
+                
+                const successRate = stats.success_rate * 100;
+                const failureRate = 100 - successRate;
+                
+                successRates.push(successRate);
+                failureRates.push(failureRate);
+                
+                // Calculate average duration
+                let avgDuration = '-';
+                if (stats.executions && stats.executions.length > 0) {
+                    const durations = stats.executions
+                        .filter(exec => exec.duration)
+                        .map(exec => exec.duration);
+                    
+                    if (durations.length > 0) {
+                        avgDuration = (durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(2) + 's';
+                    }
+                }
+                
+                // Add to table
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${toolName}</td>
+                    <td>${stats.total_calls}</td>
+                    <td class="${successRate >= 50 ? 'success' : 'failure'}">${successRate.toFixed(1)}%</td>
+                    <td>${avgDuration}</td>
+                    <td>${stats.priority || 0}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            // Update chart
+            charts.toolPerformance.data.labels = toolNames;
+            charts.toolPerformance.data.datasets[0].data = successRates;
+            charts.toolPerformance.data.datasets[1].data = failureRates;
+            charts.toolPerformance.update();
+        }
+
+        // Update timeline view
+        function updateTimelineView() {
+            if (!timelineData || !timelineData.history) return;
+            
+            const container = document.getElementById('timeline-container');
+            container.innerHTML = '';
+            
+            timelineData.history.forEach((step, index) => {
+                const timelineItem = document.createElement('div');
+                timelineItem.className = 'timeline-item';
+                
+                const statusClass = step.status === 'success' ? 'success' : 'failure';
+                
+                timelineItem.innerHTML = `
+                    <div class="timeline-time">Step ${index + 1}</div>
+                    <div class="timeline-content">${step.message || 'No message'}</div>
+                    <div class="timeline-status ${statusClass}">${step.status}</div>
+                `;
+                
+                container.appendChild(timelineItem);
+            });
+        }
+
+        // Format JSON for display
+        function formatJson(json) {
+            if (typeof json === 'string') {
+                json = JSON.parse(json);
+            }
+            
+            const formatted = JSON.stringify(json, null, 2)
+                .replace(/"([^"]+)":/g, '<span class="json-key">"$1":</span>')
+                .replace(/"([^"]*)"/g, '<span class="json-string">"$1"</span>')
+                .replace(/\b(\d+)([,}\]\n])/g, '<span class="json-number">$1</span>$2')
+                .replace(/\b(true|false)\b/g, '<span class="json-boolean">$1</span>')
+                .replace(/\bnull\b/g, '<span class="json-null">null</span>');
+                
+            return formatted;
+        }
+
+        // Load sample data
+        function loadSampleData() {
+            // Sample timeline data
+            timelineData = {
+                "agent": "ComprehensiveDemo",
+                "steps": 5,
+                "history": [
+                    {
+                        "step": 1,
+                        "timestamp": "2023-08-10T12:30:45",
+                        "status": "success",
+                        "message": "Completed 3 tasks in 0.75s with 3 successes and 0 failures.",
+                        "duration": 0.78
+                    },
+                    {
+                        "step": 2,
+                        "timestamp": "2023-08-10T12:30:47",
+                        "status": "partial_success",
+                        "message": "Completed 4 tasks in 1.25s with 3 successes and 1 failures.",
+                        "duration": 1.3
+                    },
+                    {
+                        "step": 3,
+                        "timestamp": "2023-08-10T12:30:49",
+                        "status": "failure",
+                        "message": "Detected potential stuck state, adding variation to break loop.",
+                        "duration": 0.5
+                    },
+                    {
+                        "step": 4,
+                        "timestamp": "2023-08-10T12:30:51",
+                        "status": "success",
+                        "message": "Successfully recovered from stuck state. Completed all tasks.",
+                        "duration": 0.65
+                    },
+                    {
+                        "step": 5,
+                        "timestamp": "2023-08-10T12:30:53",
+                        "status": "success",
+                        "message": "Finalized execution and generated reports.",
+                        "duration": 0.35
+                    }
+                ]
+            };
+            
+            // Sample tool data
+            toolData = {
+                "agent": "ComprehensiveDemo",
+                "tool_statistics": {
+                    "critical_data_fetch": {
+                        "total_calls": 5,
+                        "successful_calls": 5,
+                        "failed_calls": 0,
+                        "success_rate": 1.0,
+                        "priority": 10,
+                        "executions": [
+                            { "status": "success", "duration": 0.35 },
+                            { "status": "success", "duration": 0.42 },
+                            { "status": "success", "duration": 0.38 },
+                            { "status": "success", "duration": 0.41 },
+                            { "status": "success", "duration": 0.37 }
+                        ]
+                    },
+                    "data_processing": {
+                        "total_calls": 5,
+                        "successful_calls": 4,
+                        "failed_calls": 1,
+                        "success_rate": 0.8,
+                        "priority": 5,
+                        "executions": [
+                            { "status": "success", "duration": 0.85 },
+                            { "status": "success", "duration": 0.92 },
+                            { "status": "failure", "duration": 0.75 },
+                            { "status": "success", "duration": 0.88 },
+                            { "status": "success", "duration": 0.91 }
+                        ]
+                    },
+                    "background_analysis": {
+                        "total_calls": 5,
+                        "successful_calls": 3,
+                        "failed_calls": 2,
+                        "success_rate": 0.6,
+                        "priority": 2,
+                        "executions": [
+                            { "status": "success", "duration": 1.85 },
+                            { "status": "failure", "duration": 1.75 },
+                            { "status": "success", "duration": 1.92 },
+                            { "status": "failure", "duration": 1.68 },
+                            { "status": "success", "duration": 1.78 }
+                        ]
+                    },
+                    "error_prone_task": {
+                        "total_calls": 2,
+                        "successful_calls": 0,
+                        "failed_calls": 2,
+                        "success_rate": 0.0,
+                        "priority": 3,
+                        "executions": [
+                            { "status": "failure", "duration": 0.65 },
+                            { "status": "failure", "duration": 0.72 }
+                        ]
+                    }
+                }
+            };
+            
+            // Sample system metrics data
+            systemMetricsData = {
+                "agent": "ComprehensiveDemo",
+                "metrics": []
+            };
+            
+            // Generate some realistic system metrics
+            const startTime = new Date("2023-08-10T12:30:40");
+            for (let i = 0; i < 20; i++) {
+                const timestamp = new Date(startTime.getTime() + i * 1000);
+                
+                // Create some realistic patterns
+                let cpuBase = 30 + Math.sin(i * 0.5) * 15;
+                if (i > 5 && i < 10) cpuBase += 25; // Spike during middle of execution
+                
+                let memoryBase = 45 + i * 0.5; // Gradually increasing memory usage
+                if (i > 15) memoryBase -= (i - 15) * 2; // Then decreasing at end
+                
+                systemMetricsData.metrics.push({
+                    "timestamp": timestamp.toISOString(),
+                    "cpu_percent": Math.min(95, Math.max(5, cpuBase + Math.random() * 5)),
+                    "memory_percent": Math.min(90, Math.max(20, memoryBase + Math.random() * 3))
+                });
+            }
+            
+            // Add to raw data selector
+            const selector = document.getElementById('raw-data-selector');
+            selector.innerHTML = '<option value="">Select a file to view raw data</option>';
+            
+            ['timeline.json', 'tools.json', 'system_metrics.json'].forEach(filename => {
+                const option = document.createElement('option');
+                option.value = filename;
+                option.textContent = filename;
+                selector.appendChild(option);
+            });
+            
+            // Update visualizations
+            updateVisualizations();
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize charts
+            initCharts();
+            
+            // File selector
+            document.getElementById('load-files').addEventListener('click', () => {
+                const fileInput = document.getElementById('file-selector');
+                if (fileInput.files.length > 0) {
+                    loadFiles(fileInput.files);
+                } else {
+                    alert('Please select one or more JSON files to load.');
+                }
+            });
+            
+            // Raw data selector
+            document.getElementById('raw-data-selector').addEventListener('change', (e) => {
+                const filename = e.target.value;
+                if (!filename) {
+                    document.getElementById('raw-data-display').innerHTML = '';
+                    return;
+                }
+                
+                let data;
+                if (filename.includes('timeline')) {
+                    data = timelineData;
+                } else if (filename.includes('tools')) {
+                    data = toolData;
+                } else if (filename.includes('system')) {
+                    data = systemMetricsData;
+                }
+                
+                if (data) {
+                    document.getElementById('raw-data-display').innerHTML = formatJson(data);
+                }
+            });
+            
+            // Load sample data button
+            document.getElementById('load-sample-data').addEventListener('click', loadSampleData);
+            
+            // Load sample data by default
+            loadSampleData();
+        });
+    </script>
+</body>
+</html> 

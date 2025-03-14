@@ -1,0 +1,356 @@
+/* 
+ * Responsive CSS for Financial Planning Application
+ * Provides mobile-friendly layout and components
+ */
+
+/* Base responsive layout */
+@media (max-width: 1200px) {
+  .container {
+    width: 95%;
+    padding: 0 15px;
+  }
+  
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .chart-container {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 992px) {
+  .sidebar {
+    width: 250px;
+    transform: translateX(-250px);
+    transition: transform 0.3s ease;
+  }
+  
+  .sidebar.active {
+    transform: translateX(0);
+    z-index: 1050;
+  }
+  
+  .main-content {
+    margin-left: 0;
+    width: 100%;
+  }
+  
+  .navbar-toggle {
+    display: block;
+  }
+  
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  
+  .portfolio-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .data-table {
+    font-size: 14px;
+  }
+  
+  .data-table th, .data-table td {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .navbar {
+    padding: 10px;
+  }
+  
+  .navbar-brand {
+    font-size: 18px;
+  }
+  
+  .client-card {
+    flex-direction: column;
+  }
+  
+  .client-card-details {
+    border-left: none;
+    border-top: 1px solid rgba(0,0,0,0.1);
+    padding-left: 0;
+    padding-top: 15px;
+    margin-top: 15px;
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .tabs-container .tab-content {
+    padding: 15px;
+  }
+  
+  .tabs-container .tabs-nav {
+    overflow-x: auto;
+    white-space: nowrap;
+    display: flex;
+    padding-bottom: 5px;
+  }
+  
+  .portfolio-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .modal-dialog {
+    width: 90%;
+    margin: 20px auto;
+  }
+  
+  .compliance-checklist {
+    font-size: 14px;
+  }
+  
+  .asset-allocation-chart {
+    height: 250px;
+  }
+  
+  .floating-action-button {
+    bottom: 20px;
+    right: 20px;
+  }
+}
+
+@media (max-width: 576px) {
+  .navbar-brand {
+    font-size: 16px;
+  }
+  
+  .navbar-profile {
+    display: none;
+  }
+  
+  .card {
+    padding: 12px;
+    margin-bottom: 15px;
+  }
+  
+  .card-header {
+    padding: 10px 12px;
+  }
+  
+  .data-table {
+    font-size: 12px;
+  }
+  
+  .data-table th, .data-table td {
+    padding: 6px;
+  }
+  
+  .pagination {
+    font-size: 12px;
+  }
+  
+  .pagination-item {
+    padding: 5px 10px;
+  }
+  
+  .form-group {
+    margin-bottom: 10px;
+  }
+  
+  .form-label {
+    font-size: 14px;
+  }
+  
+  .form-input, .form-select {
+    font-size: 14px;
+    padding: 6px 10px;
+  }
+  
+  .btn {
+    padding: 6px 12px;
+    font-size: 14px;
+  }
+  
+  .action-buttons {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .action-buttons .btn {
+    width: 100%;
+  }
+  
+  .modal-header {
+    padding: 10px 15px;
+  }
+  
+  .modal-body {
+    padding: 15px;
+  }
+  
+  .modal-footer {
+    padding: 10px 15px;
+  }
+  
+  .alert {
+    padding: 10px;
+    margin-bottom: 15px;
+  }
+  
+  .badge {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+  
+  .client-search-results {
+    max-height: 200px;
+  }
+  
+  .dashboard-stat-value {
+    font-size: 20px;
+  }
+  
+  .dashboard-stat-label {
+    font-size: 12px;
+  }
+}
+
+/* Mobile navigation */
+.mobile-nav-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1040;
+}
+
+.sidebar.active + .mobile-nav-overlay {
+  display: block;
+}
+
+.mobile-nav-close {
+  display: none;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 24px;
+  color: #fff;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+@media (max-width: 992px) {
+  .mobile-nav-close {
+    display: block;
+  }
+}
+
+/* Touch-friendly elements */
+@media (hover: none) {
+  .btn, .nav-link, .tab-item, .form-control {
+    /* Larger touch targets */
+    min-height: 44px;
+  }
+  
+  .dropdown-item {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  
+  /* Disable hover effects, use active states instead */
+  .btn:hover, .nav-link:hover, .tab-item:hover {
+    background-color: inherit;
+    color: inherit;
+  }
+  
+  .btn:active, .nav-link:active, .tab-item:active {
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* Dark mode support for OLED screens */
+@media (prefers-color-scheme: dark) {
+  body.dark-mode-auto {
+    background-color: #121212;
+    color: #e0e0e0;
+  }
+  
+  body.dark-mode-auto .card,
+  body.dark-mode-auto .sidebar,
+  body.dark-mode-auto .navbar,
+  body.dark-mode-auto .modal-content {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+  }
+  
+  body.dark-mode-auto .form-input,
+  body.dark-mode-auto .form-select {
+    background-color: #2c2c2c;
+    color: #e0e0e0;
+    border-color: #444;
+  }
+  
+  body.dark-mode-auto .table th,
+  body.dark-mode-auto .table td {
+    border-color: #444;
+  }
+  
+  body.dark-mode-auto .border,
+  body.dark-mode-auto .border-top,
+  body.dark-mode-auto .border-bottom,
+  body.dark-mode-auto .border-left,
+  body.dark-mode-auto .border-right {
+    border-color: #444 !important;
+  }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001s !important;
+    transition-duration: 0.001s !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  .sidebar, 
+  .navbar, 
+  .footer,
+  .no-print {
+    display: none !important;
+  }
+  
+  .main-content {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  
+  .card {
+    break-inside: avoid;
+    border: 1px solid #ddd;
+    box-shadow: none !important;
+  }
+  
+  .report-page {
+    page-break-after: always;
+  }
+  
+  body {
+    background-color: white !important;
+    font-size: 12pt;
+  }
+  
+  .chart-container {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+  
+  a[href]:after {
+    content: " (" attr(href) ")";
+    font-size: 90%;
+  }
+} 

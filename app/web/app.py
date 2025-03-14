@@ -16,9 +16,24 @@ import aiofiles
 
 from app.agent.swe import FinancialPlanningAgent
 from app.logger import logger
+from app.web.auth import setup_auth_routes, get_current_active_user
+from app.web.api_docs import setup_api_docs
+from app.web.realtime import setup_websocket_routes, start_background_tasks
 
 # Initialize FastAPI app
 app = FastAPI(title="Financial Planning Agent UI")
+
+# Set up authentication routes
+setup_auth_routes(app)
+
+# Set up API documentation
+setup_api_docs(app)
+
+# Set up WebSocket routes for real-time updates
+setup_websocket_routes(app)
+
+# Start background tasks for real-time data
+start_background_tasks(app)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
