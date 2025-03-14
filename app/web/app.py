@@ -98,54 +98,24 @@ class ConnectionManager:
         # Add to conversation history
         self.conversation_history[client_id].append({"role": "user", "content": message})
         
-        try:
-            # Set up a custom handler to redirect agent outputs to the websocket
-            original_stream = self.agents[client_id].llm.stream if hasattr(self.agents[client_id].llm, 'stream') else None
-            
-            response_content = []
-            
-            async def stream_to_websocket(chunk):
-                response_content.append(chunk)
-                await self.send_message(client_id, chunk)
-                # Also send through the original stream method if needed
-                if original_stream:
-                    await original_stream(chunk)
-            
-            # Replace the stream method temporarily
-            if hasattr(self.agents[client_id].llm, 'stream'):
-                self.agents[client_id].llm.stream = stream_to_websocket
-            
-            # Run the agent
-            await self.agents[client_id].run(message)
-            
-            # Restore the original stream method
-            if hasattr(self.agents[client_id].llm, 'stream'):
-                self.agents[client_id].llm.stream = original_stream
-            
-            # Add to conversation history
-            self.conversation_history[client_id].append({"role": "assistant", "content": "".join(response_content)})
-            
-            # Check for newly generated files
-            await self.check_for_new_files(client_id)
-            
-            # Send updated file list
-            if client_id in self.generated_files and self.generated_files[client_id]:
-                file_list = []
-                for file_path in self.generated_files[client_id]:
-                    file_name = os.path.basename(file_path)
-                    file_list.append({
-                        "name": file_name,
-                        "path": file_path
-                    })
-                await self.send_message(client_id, f"[FILES]{JSONResponse(content={'files': file_list}).body.decode()}")
-            
-            # Signal completion
-            await self.send_message(client_id, "[DONE]")
-            
-        except Exception as e:
-            logger.exception(f"Error processing message: {str(e)}")
-            await self.send_message(client_id, f"An error occurred: {str(e)}")
-            await self.send_message(client_id, "[DONE]")
+        # Process with agent
+        agent = self.agents[client_id]
+        response = await agent.process_message(message)
+        
+        # Send thinking steps first
+        if hasattr(agent, 'thinking_steps') and agent.thinking_steps:
+            thinking_steps = "\n\n🤔 Thinking Process:\n" + "\n".join(agent.thinking_steps)
+            await self.send_message(client_id, thinking_steps)
+            agent.thinking_steps = []  # Clear thinking steps after sending
+        
+        # Send the final response
+        await self.send_message(client_id, response)
+        
+        # Add to conversation history
+        self.conversation_history[client_id].append({"role": "assistant", "content": response})
+        
+        # Check for new files
+        await self.check_for_new_files(client_id)
 
 
 manager = ConnectionManager()

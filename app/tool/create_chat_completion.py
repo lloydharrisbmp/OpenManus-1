@@ -10,6 +10,19 @@ class CreateChatCompletion(BaseTool):
     description: str = (
         "Creates a structured completion with specified output formatting."
     )
+    parameters: dict = Field(
+        default={
+            "type": "object",
+            "properties": {
+                "response": {
+                    "type": "string",
+                    "description": "The response text that should be delivered to the user.",
+                },
+            },
+            "required": ["response"],
+        },
+        description="The parameters that the tool accepts"
+    )
 
     # Type mapping for JSON schema
     type_mapping: dict = {
@@ -27,7 +40,8 @@ class CreateChatCompletion(BaseTool):
         """Initialize with a specific response type."""
         super().__init__()
         self.response_type = response_type
-        self.parameters = self._build_parameters()
+        if response_type != str:
+            self.parameters = self._build_parameters()
 
     def _build_parameters(self) -> dict:
         """Build parameters schema based on response type."""

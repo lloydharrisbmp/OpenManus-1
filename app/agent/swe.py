@@ -13,6 +13,7 @@ from app.tool.financial_tools import (
     TaxOptimizationTool,
 )
 from app.tool.document_analyzer import DocumentAnalyzerTool
+from app.tool.website_generator import WebsiteGeneratorTool
 
 
 class FinancialPlanningAgent(ToolCallAgent):
@@ -26,11 +27,13 @@ class FinancialPlanningAgent(ToolCallAgent):
     - Australian regulatory compliance (ASIC, ATO requirements)
     - Customized financial reporting and strategy development
     - SMSF strategy and compliance
-    - Estate planning and succession"""
+    - Estate planning and succession
+    - Website and document generation"""
 
     system_prompt: str = SYSTEM_PROMPT
     next_step_prompt: str = NEXT_STEP_TEMPLATE
     last_observation: Optional[str] = None
+    thinking_steps: List[str] = Field(default_factory=list)
 
     available_tools: ToolCollection = ToolCollection(
         AustralianMarketAnalysisTool(),
@@ -39,6 +42,7 @@ class FinancialPlanningAgent(ToolCallAgent):
         TaxOptimizationTool(),
         ReportGeneratorTool(),
         DocumentAnalyzerTool(),
+        WebsiteGeneratorTool(),
         Bash(),
         StrReplaceEditor(),
         Terminate()
@@ -64,6 +68,10 @@ class FinancialPlanningAgent(ToolCallAgent):
             open_file='',
             working_dir=self.working_dir
         )
+        
+        # Store thinking step before executing it
+        thinking_step = f"Step {len(self.thinking_steps) + 1}: {self.next_step_prompt}"
+        self.thinking_steps.append(thinking_step)
             
         return await super().think()
         

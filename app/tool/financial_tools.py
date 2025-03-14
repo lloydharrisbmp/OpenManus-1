@@ -265,128 +265,71 @@ class PortfolioOptimizationTool(BaseTool):
 
 
 class ReportGeneratorTool(BaseTool):
-    """Tool for generating client-facing financial reports."""
+    """Tool for generating financial reports and documentation."""
 
     name: str = "report_generator"
-    description: str = "Generates comprehensive financial reports for Australian clients"
+    description: str = "Generates financial reports, documentation, and analysis summaries"
     parameters: dict = {
         "type": "object",
         "properties": {
             "report_type": {
                 "type": "string",
-                "description": "Type of report to generate (portfolio_review, financial_plan, tax_strategy, estate_plan, smsf_strategy)",
+                "description": "Type of report to generate (e.g., portfolio_review, tax_strategy, estate_plan)",
             },
-            "client_id": {
+            "title": {
                 "type": "string",
-                "description": "Client identifier",
+                "description": "Title of the report",
             },
-            "period": {
+            "content": {
                 "type": "string",
-                "description": "Report period (e.g., Q1_2024, 2023, YTD)",
+                "description": "Main content of the report",
             },
-            "include_disclaimers": {
-                "type": "boolean",
-                "description": "Whether to include Australian regulatory disclaimers",
+            "format": {
+                "type": "string",
+                "description": "Output format (markdown, text)",
+                "default": "markdown"
             }
         },
-        "required": ["report_type", "client_id"]
+        "required": ["report_type", "title", "content"]
     }
 
-    async def execute(self, report_type: str, client_id: str, period: str = None, include_disclaimers: bool = True) -> Dict:
-        """Generate a client-facing report with Australian regulatory compliance."""
+    async def execute(
+        self,
+        report_type: str,
+        title: str,
+        content: str,
+        format: str = "markdown"
+    ) -> Dict:
+        """Generate a report with the specified content."""
         try:
-            report_templates = {
-                "portfolio_review": """Comprehensive Portfolio Review
-===========================
-Client ID: {client_id}
-Period: {period}
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            extension = ".md" if format == "markdown" else ".txt"
+            filename = f"{report_type}_{timestamp}{extension}"
+            
+            # Get appropriate file path using FileOrganizer
+            file_type = 'markdown' if format == 'markdown' else 'text'
+            file_path = file_organizer.get_path(file_type, filename)
+            
+            # Format content
+            formatted_content = f"""# {title}
+Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-1. Portfolio Performance
-   - Australian Equities Performance
-   - International Investments
-   - Fixed Income Analysis
-   - Property Exposure
-
-2. Asset Allocation
-   - Current vs Target Allocation
-   - Rebalancing Recommendations
-   - Franking Credit Analysis
-
-3. Risk Analysis
-   - Market Risk Assessment
-   - Currency Exposure
-   - Sector Concentration
-   - Geographic Diversification
-
-4. Tax Efficiency
-   - CGT Position
-   - Dividend Income Analysis
-   - Tax Loss Harvesting Opportunities
-
-5. Recommendations
-   - Strategic Adjustments
-   - Tax Optimization
-   - Implementation Timeline""",
-                
-                "smsf_strategy": """SMSF Strategy Review
-==================
-Client ID: {client_id}
-Period: {period}
-
-1. Fund Performance
-   - Investment Returns
-   - Expense Analysis
-   - Compliance Status
-
-2. Contribution Strategy
-   - Concessional Contributions
-   - Non-concessional Contributions
-   - Contribution Caps Analysis
-
-3. Investment Strategy
-   - Asset Allocation Review
-   - Property Strategy
-   - Limited Recourse Borrowing
-
-4. Pension Strategy
-   - Payment Requirements
-   - Tax Optimization
-   - Estate Planning Considerations""",
-                
-                "tax_strategy": """Tax Optimization Strategy
-=====================
-Client ID: {client_id}
-Period: {period}
-
-1. Current Tax Position
-   - Income Analysis
-   - Deduction Review
-   - Entity Structure Assessment
-
-2. Optimization Opportunities
-   - Income Streaming
-   - Trust Distribution Strategy
-   - Super Contribution Strategy
-
-3. Implementation Steps
-   - Short-term Actions
-   - Long-term Planning
-   - Documentation Requirements
-
-4. Projected Outcomes
-   - Tax Savings Estimates
-   - Cash Flow Impact
-   - Risk Assessment"""
+{content}
+"""
+            
+            # Write the report
+            with open(file_path, 'w') as f:
+                f.write(formatted_content)
+            
+            return {
+                "observation": f"Report generated successfully at {file_path}",
+                "success": True,
+                "file_path": str(file_path)
             }
             
-            template = report_templates.get(report_type, "Custom Report Template")
-            report = template.format(client_id=client_id, period=period or "Current")
-            
-            if include_disclaimers:
-                report += "\n\nIMPORTANT DISCLAIMERS:\n"
-                report += "This document contains general advice only and has been prepared without taking into account your personal objectives, financial situation or needs. You should consider the appropriateness of any advice before acting on it. Past performance is not a reliable indicator of future performance.\n"
-                report += "\nAFSL Disclaimer: [Insert AFSL Number and License Details]\n"
-            
-            return {"observation": f"Generated report:\n\n{report}", "success": True}
         except Exception as e:
-            return {"observation": f"Error generating report: {str(e)}", "success": False} 
+            return {
+                "observation": f"Error generating report: {str(e)}",
+                "success": False
+            } 

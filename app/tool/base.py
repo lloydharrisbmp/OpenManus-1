@@ -5,9 +5,11 @@ from pydantic import BaseModel, Field
 
 
 class BaseTool(ABC, BaseModel):
-    name: str
-    description: str
-    parameters: Optional[dict] = None
+    """Base class for all tools."""
+    
+    name: str = Field(description="The name of the tool")
+    description: str = Field(description="A description of what the tool does")
+    parameters: Dict[str, Any] = Field(description="The parameters that the tool accepts")
 
     class Config:
         arbitrary_types_allowed = True
@@ -17,8 +19,9 @@ class BaseTool(ABC, BaseModel):
         return await self.execute(**kwargs)
 
     @abstractmethod
-    async def execute(self, **kwargs) -> Any:
-        """Execute the tool with given parameters."""
+    async def execute(self, *args, **kwargs) -> Dict[str, Any]:
+        """Execute the tool with the given parameters."""
+        raise NotImplementedError("Tool must implement execute method")
 
     def to_param(self) -> Dict:
         """Convert tool to function call format."""
