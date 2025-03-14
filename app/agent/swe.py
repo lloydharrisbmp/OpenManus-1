@@ -1,7 +1,9 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 import json
+from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, BaseModel
 
 from app.agent.toolcall import ToolCallAgent
 from app.prompt.financial_planner import NEXT_STEP_TEMPLATE, SYSTEM_PROMPT
@@ -18,6 +20,15 @@ from app.tool.website_generator import WebsiteGeneratorTool
 from app.tool.tool_creator import ToolCreatorTool
 from app.logger import logger
 
+class ToolExecutionMetrics(BaseModel):
+    """Track metrics for tool execution within the agent."""
+    tool_name: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    success: bool = False
+    error_message: Optional[str] = None
+    response_length: int = 0
+    has_visualization: bool = False
 
 class FinancialPlanningAgent(ToolCallAgent):
     """An advanced AI agent specializing in Australian financial planning and investment advice for high net worth clients."""
@@ -60,6 +71,17 @@ class FinancialPlanningAgent(ToolCallAgent):
     bash: Bash = Field(default_factory=Bash)
     working_dir: str = "."
 
+    current_metrics: Optional[ToolExecutionMetrics] = None
+    execution_history: List[ToolExecutionMetrics] = Field(default_factory=list)
+    visualization_paths: List[str] = Field(default_factory=list)
+
+    def __init__(self):
+        super().__init__()
+        self.tool_creator = next(
+            (tool for tool in self.available_tools if isinstance(tool, ToolCreatorTool)),
+            None
+        )
+
     async def think(self) -> bool:
         """Process current state and decide next action"""
         # Update working directory
@@ -87,79 +109,118 @@ class FinancialPlanningAgent(ToolCallAgent):
         self.last_observation = observation
 
     async def process_message(self, message: str) -> str:
-        """Process a message and return a response."""
+        """Process a message with enhanced tracking and visualization support."""
         try:
-            # Reset tracking for a new message
+            # Reset tracking for new message
             self.current_section = "Understanding Request"
             self.completed_tasks = []
+            self.visualization_paths = []
             
-            # Determine initial section based on the message
-            if "tax" in message.lower() or "structure" in message.lower():
-                self.current_section = "Tax Analysis"
-            elif "market" in message.lower() or "investment" in message.lower():
-                self.current_section = "Market Research"
-            elif "estate" in message.lower() or "succession" in message.lower():
-                self.current_section = "Estate Planning"
-            elif "smsf" in message.lower() or "super" in message.lower():
-                self.current_section = "SMSF Strategy"
-            elif "report" in message.lower() or "document" in message.lower():
-                self.current_section = "Document Creation"
+            # Analyze if we need to create or improve tools
+            if self.tool_creator and "create tool" in message.lower():
+                result = await self.tool_creator.execute(
+                    request=message,
+                    visualization_required="visualize" in message.lower() or "plot" in message.lower(),
+                    analytics_required="analyze" in message.lower() or "report" in message.lower()
+                )
+                if result["status"] == "success":
+                    self.completed_tasks.append(f"Created new tool: {result['tool_info']['name']}")
             
             # Run the agent with the message
             response = await self.run(message)
             
-            # Format response with progress information
+            # Format response with progress and visualization information
             formatted_response = self._format_response_with_progress(response)
+            
+            # Add visualization paths if any were generated
+            if self.visualization_paths:
+                viz_section = "\n\n## Generated Visualizations:\n"
+                for path in self.visualization_paths:
+                    viz_section += f"- [View Visualization]({path})\n"
+                formatted_response += viz_section
+            
             return formatted_response
+            
         except Exception as e:
             error_msg = f"Error processing message: {str(e)}"
             logger.error(error_msg)
             return error_msg
-    
+
     def _format_response_with_progress(self, response: str) -> str:
-        """Format the response with progress tracking information."""
-        # Only add section and task information if not already included
-        if "## Working on:" not in response and self.current_section:
-            response = f"## Working on: {self.current_section}\n\n{response}"
+        """Format response with enhanced progress tracking and metrics."""
+        formatted_response = []
         
-        # Add completed tasks if any
+        # Add current section if available
+        if self.current_section:
+            formatted_response.append(f"## Working on: {self.current_section}")
+        
+        # Add main response
+        formatted_response.append(response)
+        
+        # Add completed tasks
         if self.completed_tasks:
-            task_info = "\n\n"
+            formatted_response.append("\n### Completed Tasks:")
             for task in self.completed_tasks:
-                task_info += f"✓ Task completed: {task}\n"
-            
-            # Insert task info before the last paragraph if possible
-            parts = response.rsplit("\n\n", 1)
-            if len(parts) > 1:
-                response = parts[0] + task_info + "\n\n" + parts[1]
-            else:
-                response += task_info
+                formatted_response.append(f"✓ {task}")
         
-        return response
-    
+        # Add execution metrics if available
+        if self.current_metrics and self.current_metrics.end_time:
+            execution_time = (self.current_metrics.end_time - self.current_metrics.start_time).total_seconds()
+            formatted_response.append(f"\n### Execution Metrics:")
+            formatted_response.append(f"- Tool: {self.current_metrics.tool_name}")
+            formatted_response.append(f"- Execution Time: {execution_time:.2f} seconds")
+            formatted_response.append(f"- Status: {'✓ Success' if self.current_metrics.success else '✗ Failed'}")
+            
+            if self.current_metrics.error_message:
+                formatted_response.append(f"- Error: {self.current_metrics.error_message}")
+        
+        return "\n\n".join(formatted_response)
+
     async def execute_tool(self, tool_call) -> str:
-        """Override to track task completion and improve website URL display."""
+        """Execute tool with enhanced metrics tracking and visualization handling."""
         try:
+            # Initialize metrics
+            self.current_metrics = ToolExecutionMetrics(
+                tool_name=tool_call.function.name,
+                start_time=datetime.now()
+            )
+            
             result = await super().execute_tool(tool_call)
             
-            # If this was a website generation, format the output nicely
-            if tool_call.function.name == "website_generator":
-                try:
-                    data = json.loads(result)
-                    if data.get("file_url"):
-                        self.completed_tasks.append("Generated website")
-                        return f"""✨ Website generated successfully!
-
-📂 Access your website:
-1. Direct link: {data['file_url']}
-2. File path: {data['index_file']}
-3. Command: open {data['index_file']}
-
-The website is also available in the 'Generated Documents' sidebar."""
-                except:
-                    pass
+            # Try to parse result as JSON
+            try:
+                result_data = json.loads(result)
+                
+                # Track visualizations
+                if isinstance(result_data, dict):
+                    if "visualization_path" in result_data:
+                        self.visualization_paths.append(result_data["visualization_path"])
+                    elif "file_url" in result_data:
+                        self.visualization_paths.append(result_data["file_url"])
+                
+                # Update metrics
+                self.current_metrics.success = result_data.get("status") == "success"
+                self.current_metrics.error_message = result_data.get("message") if not self.current_metrics.success else None
+                
+            except json.JSONDecodeError:
+                # Result is not JSON, just track basic metrics
+                self.current_metrics.success = "error" not in result.lower()
+                
+            self.current_metrics.end_time = datetime.now()
+            self.current_metrics.response_length = len(result)
+            self.current_metrics.has_visualization = bool(self.visualization_paths)
+            
+            # Store metrics
+            self.execution_history.append(self.current_metrics)
             
             return result
+            
         except Exception as e:
+            if self.current_metrics:
+                self.current_metrics.success = False
+                self.current_metrics.error_message = str(e)
+                self.current_metrics.end_time = datetime.now()
+                self.execution_history.append(self.current_metrics)
+            
             logger.error(f"Error in execute_tool: {str(e)}")
             return f"Error executing tool: {str(e)}"
