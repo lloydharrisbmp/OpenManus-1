@@ -82,4 +82,4 @@ class ToolFailure(ToolResult):
 
 
 class AgentAwareTool:
-    agent: Optional = None
+    agent: Optional[Any] = None

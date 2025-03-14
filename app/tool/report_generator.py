@@ -13,7 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from jinja2 import Environment, FileSystemLoader, Template
-import pdfkit
+from weasyprint import HTML
 import markdown2
 from .base import BaseTool
 
@@ -186,7 +186,7 @@ class ReportGeneratorTool(BaseTool):
             # Generate output based on format
             if output_format == 'pdf':
                 output_path = self.output_dir / "pdf" / f"report_{timestamp}.pdf"
-                pdfkit.from_string(html_content, str(output_path))
+                HTML(string=html_content).write_pdf(str(output_path))
             elif output_format == 'html':
                 output_path = self.output_dir / "html" / f"report_{timestamp}.html"
                 with open(output_path, 'w') as f:
