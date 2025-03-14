@@ -15,6 +15,7 @@ from app.tool.financial_tools import (
 from app.tool.document_analyzer import DocumentAnalyzerTool
 from app.tool.website_generator import WebsiteGeneratorTool
 from app.tool.tool_creator import ToolCreatorTool
+from app.tool.google_search import GoogleSearch
 
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "DocumentAnalyzerTool",
     "WebsiteGeneratorTool",
     "ToolCreatorTool",
+    "GoogleSearch",
 ]
