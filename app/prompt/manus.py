@@ -8,7 +8,11 @@ FileSaver: Save files locally, such as txt, py, html, etc.
 
 BrowserUseTool: Open, browse, and use web browsers.If you open a local HTML file, you must provide the absolute path to the file.
 
+<<<<<<< HEAD
 WebSearch: Perform web information retrieval
+=======
+GoogleSearch: Perform web information retrieval
+>>>>>>> my-changes
 
 Terminate: End the current interaction when the task is complete or when you need additional information from the user. Use this tool to signal that you've finished addressing the user's request or need clarification before proceeding further.
 
