@@ -3,20 +3,44 @@ Compliance service for Australian financial regulations.
 
 This module provides functionality for tracking and ensuring compliance with
 Australian financial regulations such as those from ASIC, ATO, APRA, and others.
+
+Features:
+- Asynchronous file I/O with concurrency control
+- Partial success/failure tracking
+- Enhanced error handling and logging
+- Data integrity validation
+- Automatic archiving of old data
 """
 
 import os
 import json
-from typing import Dict, List, Any, Optional
-from datetime import datetime, date
 import uuid
+import asyncio
+import aiofiles
+from datetime import datetime, date, timedelta
+from typing import Dict, List, Any, Optional, Tuple, Union
+from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import BaseModel, Field, validator
+from loguru import logger
 
-from app.logger import logger
 from app.exceptions import ConfigurationError
 from app.dependency_manager import DependencyManager
 
+class ComplianceResult(BaseModel):
+    """
+    Structured result object for compliance operations with partial success tracking.
+    """
+    success: bool
+    value: Any = None
+    error: Optional[str] = None
+    source: str = "unknown"  # "file", "memory", "operation"
+    duration_ms: Optional[float] = None
+    partial_success: bool = False
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+    def __bool__(self):
+        return self.success
 
 class ComplianceRule(BaseModel):
     """
@@ -81,41 +105,395 @@ class ComplianceReport(BaseModel):
 
 class ComplianceService:
     """
-    Service for managing compliance with Australian financial regulations.
+    Enhanced service for managing compliance with Australian financial regulations.
     
-    Provides functionality for tracking compliance rules, performing compliance
-    checks, and generating compliance reports.
+    Features:
+    - Asynchronous file I/O for scalability
+    - Concurrency control for parallel operations
+    - Partial success/failure tracking
+    - Enhanced error handling and logging
+    - Automatic archiving of old data
     """
     
-    def __init__(self, data_dir: str = "compliance"):
+    def __init__(self, data_dir: str = "compliance", concurrency_limit: int = 3, cleanup_interval: int = 3600):
         """
         Initialize the compliance service.
         
         Args:
             data_dir: Directory to store compliance data
+            concurrency_limit: Maximum concurrent file operations
+            cleanup_interval: Interval in seconds between automatic cleanups
         """
         self.data_dir = data_dir
         self.rules_file = os.path.join(data_dir, "rules.json")
         self.checks_dir = os.path.join(data_dir, "checks")
         self.reports_dir = os.path.join(data_dir, "reports")
+        self.archive_dir = os.path.join(data_dir, "archive")
         
-        # Create directories if they don't exist
-        os.makedirs(data_dir, exist_ok=True)
-        os.makedirs(self.checks_dir, exist_ok=True)
-        os.makedirs(self.reports_dir, exist_ok=True)
+        # Create directories
+        for directory in [data_dir, self.checks_dir, self.reports_dir, self.archive_dir]:
+            os.makedirs(directory, exist_ok=True)
+            
+        # Concurrency control
+        self._io_sem = asyncio.Semaphore(concurrency_limit)
+        self._cleanup_lock = asyncio.Lock()
+        self._executor = ThreadPoolExecutor(max_workers=concurrency_limit)
         
         # Initialize data
         self.rules: Dict[str, ComplianceRule] = {}
+        self.last_cleanup = datetime.now()
+        self.cleanup_interval = cleanup_interval
         
         # Load rules
-        self._load_rules()
+        self._load_rules_sync()  # Keep sync for initialization
         
-        # Initialize default rules if none exist
         if not self.rules:
             self._initialize_default_rules()
-    
-    def _load_rules(self):
-        """Load compliance rules from file."""
+            
+        logger.info(f"[ComplianceService] Initialized with data_dir={data_dir}, concurrency_limit={concurrency_limit}")
+
+    async def _load_rules_async(self) -> ComplianceResult:
+        """Load compliance rules from file asynchronously."""
+        if not os.path.exists(self.rules_file):
+            return ComplianceResult(success=True, value={}, source="file")
+
+        start_time = datetime.now()
+        try:
+            async with self._io_sem:
+                async with aiofiles.open(self.rules_file, 'r') as f:
+                    content = await f.read()
+                
+            rules_data = json.loads(content)
+            loaded_rules = {}
+            partial_success = False
+            errors = []
+
+            for rule_id, rule_data in rules_data.items():
+                try:
+                    # Convert dates
+                    for date_field in ['effective_date', 'expiry_date']:
+                        if rule_data.get(date_field):
+                            rule_data[date_field] = datetime.fromisoformat(rule_data[date_field]).date()
+                    for dt_field in ['created_at', 'updated_at']:
+                        if rule_data.get(dt_field):
+                            rule_data[dt_field] = datetime.fromisoformat(rule_data[dt_field])
+                    
+                    loaded_rules[rule_id] = ComplianceRule(**rule_data)
+                except Exception as e:
+                    errors.append(f"Error loading rule {rule_id}: {str(e)}")
+                    partial_success = True
+                    continue
+
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            
+            if not loaded_rules and errors:
+                return ComplianceResult(
+                    success=False,
+                    error="\n".join(errors),
+                    source="file",
+                    duration_ms=duration
+                )
+
+            return ComplianceResult(
+                success=True,
+                value=loaded_rules,
+                partial_success=partial_success,
+                details={"errors": errors} if errors else {},
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error loading rules: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def _save_rules_async(self) -> ComplianceResult:
+        """Save compliance rules to file asynchronously."""
+        start_time = datetime.now()
+        try:
+            rules_data = {}
+            for rule_id, rule in self.rules.items():
+                rule_dict = rule.dict()
+                # Convert dates to strings
+                for date_field in ['effective_date', 'expiry_date']:
+                    if rule_dict.get(date_field):
+                        rule_dict[date_field] = rule_dict[date_field].isoformat()
+                for dt_field in ['created_at', 'updated_at']:
+                    rule_dict[dt_field] = rule_dict[dt_field].isoformat()
+                
+                rules_data[rule_id] = rule_dict
+
+            async with self._io_sem:
+                async with aiofiles.open(self.rules_file, 'w') as f:
+                    await f.write(json.dumps(rules_data, indent=2))
+
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=True,
+                value=len(rules_data),
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error saving rules: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def create_compliance_check_async(self, tenant_id: str, rule_ids: List[str], performed_by: str, **kwargs) -> ComplianceResult:
+        """Create a new compliance check asynchronously."""
+        start_time = datetime.now()
+        check_id = str(uuid.uuid4())
+        
+        try:
+            # Validate rule IDs exist
+            invalid_rules = [rule_id for rule_id in rule_ids if rule_id not in self.rules]
+            if invalid_rules:
+                return ComplianceResult(
+                    success=False,
+                    error=f"Invalid rule IDs: {invalid_rules}",
+                    source="validation"
+                )
+
+            check = ComplianceCheck(
+                check_id=check_id,
+                tenant_id=tenant_id,
+                rule_ids=rule_ids,
+                performed_by=performed_by,
+                status=kwargs.get("status", "pending"),
+                **kwargs
+            )
+
+            check_file = os.path.join(self.checks_dir, f"{check_id}.json")
+            async with self._io_sem:
+                async with aiofiles.open(check_file, 'w') as f:
+                    check_data = check.dict()
+                    check_data['performed_at'] = check_data['performed_at'].isoformat()
+                    if check_data.get('expiry_date'):
+                        check_data['expiry_date'] = check_data['expiry_date'].isoformat()
+                    
+                    await f.write(json.dumps(check_data, indent=2))
+
+            # Check if cleanup is needed
+            await self._maybe_cleanup()
+
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=True,
+                value=check_id,
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error creating check: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def get_compliance_check_async(self, check_id: str) -> ComplianceResult:
+        """Get a compliance check by ID asynchronously."""
+        start_time = datetime.now()
+        check_file = os.path.join(self.checks_dir, f"{check_id}.json")
+        
+        if not os.path.exists(check_file):
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=False,
+                error="Check not found",
+                source="file",
+                duration_ms=duration
+            )
+
+        try:
+            async with self._io_sem:
+                async with aiofiles.open(check_file, 'r') as f:
+                    content = await f.read()
+                    check_data = json.loads(content)
+
+            # Convert dates
+            if check_data.get('performed_at'):
+                check_data['performed_at'] = datetime.fromisoformat(check_data['performed_at'])
+            if check_data.get('expiry_date'):
+                check_data['expiry_date'] = datetime.fromisoformat(check_data['expiry_date']).date()
+
+            check = ComplianceCheck(**check_data)
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return ComplianceResult(
+                success=True,
+                value=check,
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error loading check {check_id}: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def get_tenant_compliance_checks_async(self, tenant_id: str) -> ComplianceResult:
+        """Get all compliance checks for a tenant asynchronously with partial success tracking."""
+        start_time = datetime.now()
+        checks = []
+        errors = []
+        
+        try:
+            filenames = [f for f in os.listdir(self.checks_dir) if f.endswith('.json')]
+            tasks = []
+            
+            for filename in filenames:
+                check_id = filename.replace('.json', '')
+                tasks.append(self._load_check_if_tenant(check_id, tenant_id))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for result in results:
+                if isinstance(result, ComplianceResult):
+                    if result.success:
+                        checks.append(result.value)
+                    elif result.error:
+                        errors.append(result.error)
+                elif isinstance(result, Exception):
+                    errors.append(str(result))
+
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=True,
+                value=checks,
+                partial_success=bool(errors),
+                details={"errors": errors} if errors else {},
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error loading tenant checks: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def _maybe_cleanup(self) -> None:
+        """Check if cleanup is needed and run it if necessary."""
+        now = datetime.now()
+        if (now - self.last_cleanup).total_seconds() > self.cleanup_interval:
+            if self._cleanup_lock.locked():
+                return
+                
+            async with self._cleanup_lock:
+                if (now - self.last_cleanup).total_seconds() > self.cleanup_interval:
+                    await self.cleanup_old_data()
+                    self.last_cleanup = now
+
+    async def cleanup_old_data(self, days_threshold: int = 90) -> ComplianceResult:
+        """
+        Archive old compliance data.
+        
+        Args:
+            days_threshold: Number of days after which data is considered old
+        """
+        start_time = datetime.now()
+        archived_files = []
+        errors = []
+        
+        try:
+            cutoff_date = datetime.now() - timedelta(days=days_threshold)
+            
+            # Archive old checks
+            check_tasks = []
+            for filename in os.listdir(self.checks_dir):
+                if not filename.endswith('.json'):
+                    continue
+                    
+                file_path = os.path.join(self.checks_dir, filename)
+                check_tasks.append(self._archive_if_old(file_path, cutoff_date, "checks"))
+            
+            # Archive old reports
+            report_tasks = []
+            for filename in os.listdir(self.reports_dir):
+                if not filename.endswith('.json'):
+                    continue
+                    
+                file_path = os.path.join(self.reports_dir, filename)
+                report_tasks.append(self._archive_if_old(file_path, cutoff_date, "reports"))
+            
+            # Wait for all archive operations
+            results = await asyncio.gather(*(check_tasks + report_tasks), return_exceptions=True)
+            
+            for result in results:
+                if isinstance(result, tuple):
+                    success, file_info = result
+                    if success:
+                        archived_files.append(file_info)
+                    else:
+                        errors.append(file_info)
+                elif isinstance(result, Exception):
+                    errors.append(str(result))
+
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=True,
+                value={"archived": archived_files, "errors": errors},
+                partial_success=bool(errors),
+                source="cleanup",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error during cleanup: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="cleanup",
+                duration_ms=duration
+            )
+
+    async def _archive_if_old(self, file_path: str, cutoff_date: datetime, data_type: str) -> Tuple[bool, str]:
+        """Archive a single file if it's older than the cutoff date."""
+        try:
+            async with self._io_sem:
+                async with aiofiles.open(file_path, 'r') as f:
+                    data = json.loads(await f.read())
+                
+            date_field = 'performed_at' if data_type == 'checks' else 'generated_at'
+            if datetime.fromisoformat(data[date_field]) < cutoff_date:
+                archive_path = os.path.join(
+                    self.archive_dir,
+                    data_type,
+                    datetime.fromisoformat(data[date_field]).strftime('%Y-%m'),
+                    os.path.basename(file_path)
+                )
+                
+                os.makedirs(os.path.dirname(archive_path), exist_ok=True)
+                os.rename(file_path, archive_path)
+                
+                return True, f"Archived {file_path} to {archive_path}"
+            
+            return True, f"Skipped {file_path} (not old enough)"
+        except Exception as e:
+            return False, f"Error archiving {file_path}: {str(e)}"
+
+    def _load_rules_sync(self):
+        """Load compliance rules from file synchronously."""
         if os.path.exists(self.rules_file):
             try:
                 with open(self.rules_file, 'r') as f:
@@ -740,6 +1118,347 @@ class ComplianceService:
                 summary["by_authority"][rule.authority]["pending"] += 1
         
         return summary
+
+    async def update_compliance_check_async(self, check_id: str, **kwargs) -> ComplianceResult:
+        """Update a compliance check asynchronously."""
+        start_time = datetime.now()
+        
+        # Get existing check
+        check_result = await self.get_compliance_check_async(check_id)
+        if not check_result.success:
+            return check_result
+        
+        check = check_result.value
+        
+        try:
+            # Update check properties
+            for key, value in kwargs.items():
+                if hasattr(check, key):
+                    setattr(check, key, value)
+            
+            # Save check to file
+            check_file = os.path.join(self.checks_dir, f"{check_id}.json")
+            async with self._io_sem:
+                async with aiofiles.open(check_file, 'w') as f:
+                    check_data = check.dict()
+                    check_data['performed_at'] = check_data['performed_at'].isoformat()
+                    if check_data.get('expiry_date'):
+                        check_data['expiry_date'] = check_data['expiry_date'].isoformat()
+                    
+                    await f.write(json.dumps(check_data, indent=2))
+            
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=True,
+                value=check,
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error updating check {check_id}: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def create_compliance_report_async(self, tenant_id: str, title: str, period_start: date, 
+                                          period_end: date, generated_by: str, **kwargs) -> ComplianceResult:
+        """Create a new compliance report asynchronously."""
+        start_time = datetime.now()
+        report_id = str(uuid.uuid4())
+        
+        try:
+            report = ComplianceReport(
+                report_id=report_id,
+                tenant_id=tenant_id,
+                title=title,
+                period_start=period_start,
+                period_end=period_end,
+                generated_by=generated_by,
+                **kwargs
+            )
+            
+            report_file = os.path.join(self.reports_dir, f"{report_id}.json")
+            async with self._io_sem:
+                async with aiofiles.open(report_file, 'w') as f:
+                    report_data = report.dict()
+                    report_data['generated_at'] = report_data['generated_at'].isoformat()
+                    report_data['period_start'] = report_data['period_start'].isoformat()
+                    report_data['period_end'] = report_data['period_end'].isoformat()
+                    
+                    await f.write(json.dumps(report_data, indent=2))
+            
+            # Check if cleanup is needed
+            await self._maybe_cleanup()
+            
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=True,
+                value=report_id,
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error creating report: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def get_compliance_report_async(self, report_id: str) -> ComplianceResult:
+        """Get a compliance report by ID asynchronously."""
+        start_time = datetime.now()
+        report_file = os.path.join(self.reports_dir, f"{report_id}.json")
+        
+        if not os.path.exists(report_file):
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=False,
+                error="Report not found",
+                source="file",
+                duration_ms=duration
+            )
+        
+        try:
+            async with self._io_sem:
+                async with aiofiles.open(report_file, 'r') as f:
+                    content = await f.read()
+                    report_data = json.loads(content)
+            
+            # Convert dates
+            if report_data.get('generated_at'):
+                report_data['generated_at'] = datetime.fromisoformat(report_data['generated_at'])
+            if report_data.get('period_start'):
+                report_data['period_start'] = datetime.fromisoformat(report_data['period_start']).date()
+            if report_data.get('period_end'):
+                report_data['period_end'] = datetime.fromisoformat(report_data['period_end']).date()
+            
+            report = ComplianceReport(**report_data)
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            
+            return ComplianceResult(
+                success=True,
+                value=report,
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error loading report {report_id}: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def get_tenant_compliance_reports_async(self, tenant_id: str) -> ComplianceResult:
+        """Get all compliance reports for a tenant asynchronously with partial success tracking."""
+        start_time = datetime.now()
+        reports = []
+        errors = []
+        
+        try:
+            filenames = [f for f in os.listdir(self.reports_dir) if f.endswith('.json')]
+            tasks = []
+            
+            for filename in filenames:
+                report_id = filename.replace('.json', '')
+                tasks.append(self._load_report_if_tenant(report_id, tenant_id))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for result in results:
+                if isinstance(result, ComplianceResult):
+                    if result.success:
+                        reports.append(result.value)
+                    elif result.error:
+                        errors.append(result.error)
+                elif isinstance(result, Exception):
+                    errors.append(str(result))
+            
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=True,
+                value=reports,
+                partial_success=bool(errors),
+                details={"errors": errors} if errors else {},
+                source="file",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error loading tenant reports: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="file",
+                duration_ms=duration
+            )
+
+    async def generate_compliance_summary_async(self, tenant_id: str) -> ComplianceResult:
+        """Generate a compliance summary for a tenant asynchronously."""
+        start_time = datetime.now()
+        
+        try:
+            # Get checks and reports concurrently
+            checks_result, reports_result = await asyncio.gather(
+                self.get_tenant_compliance_checks_async(tenant_id),
+                self.get_tenant_compliance_reports_async(tenant_id)
+            )
+            
+            checks = checks_result.value if checks_result.success else []
+            reports = reports_result.value if reports_result.success else []
+            
+            summary = {
+                "tenant_id": tenant_id,
+                "generated_at": datetime.now().isoformat(),
+                "total_rules": len(self.get_active_rules()),
+                "checks": {
+                    "total": len(checks),
+                    "pending": len([c for c in checks if c.status == "pending"]),
+                    "in_progress": len([c for c in checks if c.status == "in_progress"]),
+                    "completed": len([c for c in checks if c.status == "completed"]),
+                    "compliance_rate": 0
+                },
+                "reports": {
+                    "total": len(reports),
+                    "latest": None
+                },
+                "by_category": {},
+                "by_authority": {},
+                "high_priority_issues": []
+            }
+            
+            # Calculate compliance rate
+            completed_checks = [c for c in checks if c.status == "completed"]
+            if completed_checks:
+                compliant_items = 0
+                total_items = 0
+                
+                for check in completed_checks:
+                    for rule_id, result in check.results.items():
+                        if isinstance(result, dict) and "items" in result:
+                            for item in result["items"]:
+                                total_items += 1
+                                if item.get("compliant", False):
+                                    compliant_items += 1
+                
+                summary["checks"]["compliance_rate"] = (compliant_items / total_items * 100) if total_items > 0 else 0
+            
+            # Get latest report
+            if reports:
+                latest_report = max(reports, key=lambda r: r.generated_at)
+                summary["reports"]["latest"] = {
+                    "report_id": latest_report.report_id,
+                    "title": latest_report.title,
+                    "generated_at": latest_report.generated_at.isoformat(),
+                    "period_start": latest_report.period_start.isoformat(),
+                    "period_end": latest_report.period_end.isoformat()
+                }
+            
+            # Collect statistics by category and authority
+            active_rules = self.get_active_rules()
+            
+            for rule in active_rules:
+                # Initialize category stats
+                if rule.category not in summary["by_category"]:
+                    summary["by_category"][rule.category] = {
+                        "total": 0,
+                        "compliant": 0,
+                        "non_compliant": 0,
+                        "pending": 0
+                    }
+                
+                # Initialize authority stats
+                if rule.authority not in summary["by_authority"]:
+                    summary["by_authority"][rule.authority] = {
+                        "total": 0,
+                        "compliant": 0,
+                        "non_compliant": 0,
+                        "pending": 0
+                    }
+                
+                summary["by_category"][rule.category]["total"] += 1
+                summary["by_authority"][rule.authority]["total"] += 1
+                
+                # Check compliance status
+                rule_compliant = False
+                rule_non_compliant = False
+                
+                for check in completed_checks:
+                    if rule.rule_id in check.rule_ids and rule.rule_id in check.results:
+                        result = check.results[rule.rule_id]
+                        if isinstance(result, dict) and "compliant" in result:
+                            if result["compliant"]:
+                                rule_compliant = True
+                            else:
+                                rule_non_compliant = True
+                                
+                                # Add to high priority issues
+                                if rule.severity in ["high", "critical"]:
+                                    summary["high_priority_issues"].append({
+                                        "rule_id": rule.rule_id,
+                                        "title": rule.title,
+                                        "severity": rule.severity,
+                                        "authority": rule.authority,
+                                        "category": rule.category,
+                                        "check_id": check.check_id,
+                                        "details": result.get("details", "")
+                                    })
+                
+                # Update statistics
+                if rule_compliant:
+                    summary["by_category"][rule.category]["compliant"] += 1
+                    summary["by_authority"][rule.authority]["compliant"] += 1
+                elif rule_non_compliant:
+                    summary["by_category"][rule.category]["non_compliant"] += 1
+                    summary["by_authority"][rule.authority]["non_compliant"] += 1
+                else:
+                    summary["by_category"][rule.category]["pending"] += 1
+                    summary["by_authority"][rule.authority]["pending"] += 1
+            
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            return ComplianceResult(
+                success=True,
+                value=summary,
+                partial_success=not (checks_result.success and reports_result.success),
+                details={
+                    "check_errors": checks_result.error if not checks_result.success else None,
+                    "report_errors": reports_result.error if not reports_result.success else None
+                },
+                source="summary",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.now() - start_time).total_seconds() * 1000
+            logger.error(f"[ComplianceService] Error generating summary: {e}", exc_info=True)
+            return ComplianceResult(
+                success=False,
+                error=str(e),
+                source="summary",
+                duration_ms=duration
+            )
+
+    async def _load_check_if_tenant(self, check_id: str, tenant_id: str) -> ComplianceResult:
+        """Load a check if it belongs to the specified tenant."""
+        result = await self.get_compliance_check_async(check_id)
+        if result.success and result.value.tenant_id == tenant_id:
+            return result
+        return ComplianceResult(success=False, error="Check not found or not owned by tenant", source="file")
+
+    async def _load_report_if_tenant(self, report_id: str, tenant_id: str) -> ComplianceResult:
+        """Load a report if it belongs to the specified tenant."""
+        result = await self.get_compliance_report_async(report_id)
+        if result.success and result.value.tenant_id == tenant_id:
+            return result
+        return ComplianceResult(success=False, error="Report not found or not owned by tenant", source="file")
 
 
 # Create global compliance service

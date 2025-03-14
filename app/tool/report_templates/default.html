@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ report.title }}</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --accent-color: #e74c3c;
+            --text-color: #333;
+            --light-gray: #f8f9fa;
+            --dark-gray: #343a40;
+            --white: #fff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--light-gray);
+            padding: 2rem;
+        }
+
+        .report-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: var(--white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 2rem;
+        }
+
+        .report-header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 2px solid var(--secondary-color);
+        }
+
+        .report-title {
+            font-size: 2.5rem;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+        }
+
+        .report-meta {
+            color: var(--dark-gray);
+            font-size: 0.9rem;
+        }
+
+        .report-section {
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 1.8rem;
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--secondary-color);
+        }
+
+        .section-content {
+            margin-bottom: 2rem;
+        }
+
+        .visualization {
+            margin: 2rem 0;
+            text-align: center;
+        }
+
+        .visualization img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .visualization-title {
+            font-size: 1.2rem;
+            color: var(--primary-color);
+            margin-top: 1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: var(--light-gray);
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: var(--light-gray);
+        }
+
+        .report-footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 2px solid var(--secondary-color);
+            text-align: center;
+            color: var(--dark-gray);
+            font-size: 0.9rem;
+        }
+
+        @media print {
+            body {
+                background-color: var(--white);
+                padding: 0;
+            }
+
+            .report-container {
+                box-shadow: none;
+                padding: 0;
+            }
+
+            .visualization img {
+                max-width: 800px;
+            }
+        }
+
+        /* Additional styles for specific content types */
+        .alert {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+
+        .alert-info {
+            background-color: #cce5ff;
+            color: #004085;
+            border: 1px solid #b8daff;
+        }
+
+        .alert-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .code-block {
+            background-color: var(--light-gray);
+            padding: 1rem;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+
+        .footnote {
+            font-size: 0.8rem;
+            color: var(--dark-gray);
+            margin-top: 0.5rem;
+        }
+
+        .chart-container {
+            margin: 2rem 0;
+            padding: 1rem;
+            background-color: var(--white);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-title {
+            font-size: 1.2rem;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+        <header class="report-header">
+            <h1 class="report-title">{{ report.title }}</h1>
+            <div class="report-meta">
+                <p>Generated on: {{ generated_date }}</p>
+                {% if report.author %}
+                <p>Author: {{ report.author }}</p>
+                {% endif %}
+            </div>
+        </header>
+
+        <main>
+            {% for section in report.sections %}
+            <section class="report-section">
+                <h2 class="section-title">{{ section.title }}</h2>
+                <div class="section-content">
+                    {{ section.content | safe }}
+                </div>
+
+                {% if section.visualizations %}
+                {% for viz in section.visualizations %}
+                <div class="visualization">
+                    <img src="{{ viz.image_path }}" alt="{{ viz.title }}">
+                    {% if viz.title %}
+                    <p class="visualization-title">{{ viz.title }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                {% endif %}
+            </section>
+            {% endfor %}
+
+            {% if report.visualizations %}
+            <section class="report-section">
+                <h2 class="section-title">Data Visualizations</h2>
+                {% for viz in report.visualizations %}
+                <div class="visualization">
+                    <img src="{{ viz.image_path }}" alt="{{ viz.title }}">
+                    {% if viz.title %}
+                    <p class="visualization-title">{{ viz.title }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </section>
+            {% endif %}
+        </main>
+
+        <footer class="report-footer">
+            <p>Report generated by OpenManus Financial Planning AI</p>
+            <p>Generated on: {{ generated_date }}</p>
+            {% if report.footer %}
+            <p>{{ report.footer }}</p>
+            {% endif %}
+        </footer>
+    </div>
+</body>
+</html> 
