@@ -5,7 +5,13 @@ from pydantic import Field
 from app.agent.toolcall import ToolCallAgent
 from app.prompt.financial_planner import NEXT_STEP_TEMPLATE, SYSTEM_PROMPT
 from app.tool import Bash, StrReplaceEditor, Terminate, ToolCollection
-from app.tool.financial_tools import MarketAnalysisTool, PortfolioOptimizationTool, ReportGeneratorTool
+from app.tool.financial_tools import (
+    AustralianMarketAnalysisTool,
+    MarketAnalysisTool,
+    PortfolioOptimizationTool,
+    ReportGeneratorTool,
+    TaxOptimizationTool,
+)
 
 
 class FinancialPlanningAgent(ToolCallAgent):
@@ -13,18 +19,22 @@ class FinancialPlanningAgent(ToolCallAgent):
 
     name: str = "aus_financial_planner"
     description: str = """A sophisticated financial planning AI that specializes in providing comprehensive advice for high net worth Australian clients, with expertise in:
-    - Complex entity and tax structure optimization
-    - Investment research and market analysis
-    - Portfolio optimization and strategy development
-    - Customized financial reporting and analysis
-    - Regulatory compliance and risk management"""
+    - Complex entity and tax structure optimization (trusts, companies, SMSFs)
+    - ASX and international investment research and analysis
+    - Portfolio optimization with tax-aware strategies
+    - Australian regulatory compliance (ASIC, ATO requirements)
+    - Customized financial reporting and strategy development
+    - SMSF strategy and compliance
+    - Estate planning and succession"""
 
     system_prompt: str = SYSTEM_PROMPT
     next_step_prompt: str = NEXT_STEP_TEMPLATE
 
     available_tools: ToolCollection = ToolCollection(
-        MarketAnalysisTool(),
+        AustralianMarketAnalysisTool(),
+        MarketAnalysisTool(),  # Keep for international markets
         PortfolioOptimizationTool(),
+        TaxOptimizationTool(),
         ReportGeneratorTool(),
         Bash(),
         StrReplaceEditor(),
