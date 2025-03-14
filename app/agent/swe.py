@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field
 
@@ -30,6 +30,7 @@ class FinancialPlanningAgent(ToolCallAgent):
 
     system_prompt: str = SYSTEM_PROMPT
     next_step_prompt: str = NEXT_STEP_TEMPLATE
+    last_observation: Optional[str] = None
 
     available_tools: ToolCollection = ToolCollection(
         AustralianMarketAnalysisTool(),
@@ -53,8 +54,20 @@ class FinancialPlanningAgent(ToolCallAgent):
         """Process current state and decide next action"""
         # Update working directory
         self.working_dir = await self.bash.execute("pwd")
-        self.next_step_prompt = self.next_step_prompt.format(
-            current_dir=self.working_dir
+        
+        # Create a modified template with single braces
+        modified_template = NEXT_STEP_TEMPLATE.replace("{{", "{").replace("}}", "}")
+        
+        # Now format with single braces
+        self.next_step_prompt = modified_template.format(
+            observation=getattr(self, 'last_observation', '') or '',
+            open_file='',
+            working_dir=self.working_dir
         )
-
+            
         return await super().think()
+        
+    async def observe(self, observation: str) -> None:
+        """Store the observation for future reference"""
+        await super().observe(observation)
+        self.last_observation = observation

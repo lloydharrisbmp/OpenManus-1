@@ -31,8 +31,8 @@ Remember to wait for a response before proceeding with additional recommendation
 IMPORTANT: All advice must be tailored to the Australian context and comply with local regulations.
 """
 
-NEXT_STEP_TEMPLATE = """{{observation}}
-(Open file: {{open_file}})
-(Current directory: {{working_dir}})
+NEXT_STEP_TEMPLATE = """{observation}
+(Open file: {open_file})
+(Current directory: {working_dir})
 advisor-$
 """ 

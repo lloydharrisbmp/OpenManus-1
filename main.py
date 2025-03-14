@@ -1,11 +1,11 @@
 import asyncio
 
-from app.agent.manus import Manus
+from app.agent.swe import FinancialPlanningAgent
 from app.logger import logger
 
 
 async def main():
-    agent = Manus()
+    agent = FinancialPlanningAgent()
     try:
         prompt = input("Enter your prompt: ")
         if not prompt.strip():
