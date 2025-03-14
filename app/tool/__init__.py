@@ -15,8 +15,13 @@ from app.tool.financial_tools import (
 from app.tool.document_analyzer import DocumentAnalyzerTool
 from app.tool.website_generator import WebsiteGeneratorTool
 from app.tool.tool_creator import ToolCreatorTool
-from app.tool.google_search import GoogleSearch
 from app.tool.browser_use import BrowserUseTool
+from .market_data import MarketDataTool
+from .property_analysis import PropertyAnalysisTool
+from .superannuation import SuperannuationAnalysisTool
+from .estate import EstateAnalysisTool
+from .insurance import InsuranceAnalysisTool
+from .google_search import GoogleSearch
 
 
 __all__ = [
@@ -36,5 +41,10 @@ __all__ = [
     "WebsiteGeneratorTool",
     "ToolCreatorTool",
     "GoogleSearch",
-    "BrowserUseTool"
+    "BrowserUseTool",
+    "MarketDataTool",
+    "PropertyAnalysisTool",
+    "SuperannuationAnalysisTool",
+    "EstateAnalysisTool",
+    "InsuranceAnalysisTool"
 ]
