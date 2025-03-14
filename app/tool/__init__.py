@@ -16,6 +16,7 @@ from app.tool.document_analyzer import DocumentAnalyzerTool
 from app.tool.website_generator import WebsiteGeneratorTool
 from app.tool.tool_creator import ToolCreatorTool
 from app.tool.google_search import GoogleSearch
+from app.tool.browser_use import BrowserUseTool
 
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     "WebsiteGeneratorTool",
     "ToolCreatorTool",
     "GoogleSearch",
+    "BrowserUseTool"
 ]
