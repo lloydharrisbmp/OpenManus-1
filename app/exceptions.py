@@ -68,3 +68,20 @@ class SecurityError(BaseFinancialPlannerException):
     def __init__(self, message: str = None):
         self.message = message or "Security error"
         super().__init__(self.message)
+
+
+class ToolError(Exception):
+    """Base exception for tool-related errors."""
+    pass
+
+class BashError(ToolError):
+    """Exception raised for bash-related errors."""
+    pass
+
+class SessionError(BashError):
+    """Exception raised for session-related errors."""
+    pass
+
+class TimeoutError(BashError):
+    """Exception raised when a command times out."""
+    pass
