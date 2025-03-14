@@ -30,11 +30,10 @@ class ProxySettings(BaseModel):
     username: Optional[str] = Field(None, description="Proxy username")
     password: Optional[str] = Field(None, description="Proxy password")
 
-<<<<<<< HEAD
+
 class SearchSettings(BaseModel):
     engine: str = Field(default='Google', description="Search engine the llm to use")
-=======
->>>>>>> my-changes
+
 
 class BrowserSettings(BaseModel):
     headless: bool = Field(False, description="Whether to run browser in headless mode")
@@ -63,12 +62,9 @@ class AppConfig(BaseModel):
     browser_config: Optional[BrowserSettings] = Field(
         None, description="Browser configuration"
     )
-<<<<<<< HEAD
     search_config: Optional[SearchSettings] = Field(
         None, description="Search configuration"
     )
-=======
->>>>>>> my-changes
 
     class Config:
         arbitrary_types_allowed = True
@@ -160,14 +156,11 @@ class Config:
             if valid_browser_params:
                 browser_settings = BrowserSettings(**valid_browser_params)
 
-<<<<<<< HEAD
         search_config = raw_config.get("search", {})
         search_settings = None
         if search_config:
             search_settings = SearchSettings(**search_config)
 
-=======
->>>>>>> my-changes
         config_dict = {
             "llm": {
                 "default": default_settings,
@@ -177,10 +170,7 @@ class Config:
                 },
             },
             "browser_config": browser_settings,
-<<<<<<< HEAD
             "search_config": search_settings,
-=======
->>>>>>> my-changes
         }
 
         self._config = AppConfig(**config_dict)
@@ -192,13 +182,10 @@ class Config:
     @property
     def browser_config(self) -> Optional[BrowserSettings]:
         return self._config.browser_config
-<<<<<<< HEAD
     
     @property
     def search_config(self) -> Optional[SearchSettings]:
         return self._config.search_config
-=======
->>>>>>> my-changes
 
 
 config = Config()
