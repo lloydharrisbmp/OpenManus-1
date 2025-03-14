@@ -20,3 +20,9 @@ aiofiles~=24.1.0
 pydantic_core~=2.27.2
 colorama~=0.4.6
 playwright~=1.49.1
+
+# Financial analysis packages
+yfinance~=0.2.36
+pandas~=2.2.1
+matplotlib~=3.8.3
+scipy~=1.12.0  # For portfolio optimization calculations
