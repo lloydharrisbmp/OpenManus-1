@@ -11,7 +11,7 @@ from app.llm import LLM
 from app.logger import logger
 from app.schema import AgentState, Memory, Message, ROLE_TYPE
 from app.reasoning.groq_client import GroqReasoner
-from app.config.tool_config import ToolConfig
+from app.config import ToolConfig
 
 logger = logging.getLogger(__name__)
 

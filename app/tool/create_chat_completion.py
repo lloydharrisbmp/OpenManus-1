@@ -240,7 +240,7 @@ class CreateChatCompletion(BaseTool):
         if params.response_model:
             model_cls = self._find_registered_model(params.response_model)
             if not model_cls:
-        return {
+                return {
                     "error": f"Response model '{params.response_model}' not found.",
                     "success": False
                 }

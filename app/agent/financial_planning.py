@@ -5,7 +5,6 @@ from pydantic import BaseModel, validator, BaseSettings
 import aiohttp
 from collections import deque
 import contextlib
-import structlog
 from asyncio import Queue
 from dataclasses import dataclass
 from typing import Set
@@ -107,7 +106,11 @@ class FinancialPlanningAgent(BaseAgent):
         self._context_history.clear()
 
     async def _execute_parallel_tools(self, tool_calls: List[ToolCall]) -> List[Dict[str, Any]]:
-        # Now with validated input 
+        # Now with validated input
+        tasks = []
+        for call_idx, call in enumerate(tool_calls):
+            tasks.append(self._run_single_tool_call(call, call_idx))
+        return await asyncio.gather(*tasks)
 
     async def __aenter__(self):
         """Setup async resources."""
@@ -131,7 +134,7 @@ class FinancialPlanningAgent(BaseAgent):
             params=call.params
         )
         try:
-            result = # ... existing code ...
+            result = await self.safe_execute_tool({"tool": call.tool_name, "parameters": call.params})
             await self._progress_queue.put({
                 "step": call_idx,
                 "tool": call.tool_name,
@@ -145,7 +148,7 @@ class FinancialPlanningAgent(BaseAgent):
                 "status": "failed",
                 "error": str(e)
             })
-            raise 
+            raise
 
     def validate_tools(self) -> bool:
         """
