@@ -13,6 +13,7 @@ from datetime import datetime
 from jinja2 import Environment, FileSystemLoader, Template
 from bs4 import BeautifulSoup
 import sass
+from pydantic import Field
 from .base import BaseTool
 
 class WebsiteGeneratorTool(BaseTool):
@@ -33,11 +34,14 @@ class WebsiteGeneratorTool(BaseTool):
         },
         "required": ["config"]
     }
+    
+    template_dir: Path = Field(default_factory=lambda: Path(__file__).parent / "website_templates")
+    output_dir: Path = Field(default_factory=lambda: Path("generated_websites"))
+    env: Environment = Field(default=None)
+    logger: logging.Logger = Field(default=None)
 
     def __init__(self):
         super().__init__()
-        self.template_dir = Path(__file__).parent / "website_templates"
-        self.output_dir = Path("generated_websites")
         self.env = Environment(
             loader=FileSystemLoader(str(self.template_dir)),
             trim_blocks=True,
