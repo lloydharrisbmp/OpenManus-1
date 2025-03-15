@@ -1805,4 +1805,109 @@ body {
 
 .toast-info i {
     color: var(--info-color);
+}
+
+/* Clarification Questions */
+.clarification-questions {
+    border-left: 4px solid #4a90e2;
+    background-color: #f8f9fa;
+    padding: 15px;
+    margin: 10px 0;
+}
+
+.clarification-questions .message-content {
+    color: #2c3e50;
+}
+
+.clarification-questions ol {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.clarification-questions li {
+    margin: 5px 0;
+    line-height: 1.5;
+}
+
+/* Clarification Input */
+.clarification-input-container {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 15px 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.clarification-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    color: #4a90e2;
+}
+
+.clarification-header i {
+    margin-right: 8px;
+    font-size: 1.1em;
+}
+
+.clarification-header span {
+    font-weight: 500;
+}
+
+#clarificationInput {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    margin: 10px 0;
+    font-size: 14px;
+    resize: vertical;
+    transition: border-color 0.2s;
+}
+
+#clarificationInput:focus {
+    border-color: #4a90e2;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
+}
+
+.clarification-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.clarification-buttons button {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.clarification-buttons button i {
+    margin-right: 8px;
+}
+
+.clarification-buttons .primary-button {
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+}
+
+.clarification-buttons .primary-button:hover {
+    background-color: #357abd;
+}
+
+.clarification-buttons .secondary-button {
+    background-color: #f8f9fa;
+    color: #4a4a4a;
+    border: 1px solid #e0e0e0;
+}
+
+.clarification-buttons .secondary-button:hover {
+    background-color: #e9ecef;
 } 

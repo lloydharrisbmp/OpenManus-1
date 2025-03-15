@@ -329,10 +329,30 @@ class ConnectionManager:
             
             # Process the clarified message
             response = await agent.process_clarified_message(original_message, clarifications)
+            
+            # Send the response with normal flow
+            await self._send_response_with_progress(client_id, agent, response)
         else:
             # Process the initial message to get clarification questions
             response = await agent.process_message(message)
+            
+            # Check if the response contains clarification questions
+            if "Before proceeding, I'd like to clarify" in response:
+                # Send as a special clarification message type
+                await self.send_message(client_id, f"[CLARIFICATION]{response}")
+                await self.send_message(client_id, "[WAITING_FOR_CLARIFICATION]")
+            else:
+                # Normal response flow
+                await self._send_response_with_progress(client_id, agent, response)
         
+        # Update conversations list (in case this is a new conversation)
+        await self.send_conversations_list(client_id)
+        
+        # Signal that response is complete
+        await self.send_message(client_id, "[DONE]")
+
+    async def _send_response_with_progress(self, client_id: str, agent: FinancialPlanningAgent, response: str):
+        """Helper method to send a response with progress updates."""
         # Extract sections and tasks from the response
         self.extract_sections_and_tasks(client_id, response)
         await self.send_progress_update(client_id)
@@ -345,12 +365,6 @@ class ConnectionManager:
         
         # Send the response
         await self.send_message(client_id, response)
-        
-        # Update conversations list (in case this is a new conversation)
-        await self.send_conversations_list(client_id)
-        
-        # Signal that response is complete
-        await self.send_message(client_id, "[DONE]")
 
 
 manager = ConnectionManager()

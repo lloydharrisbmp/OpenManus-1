@@ -394,21 +394,96 @@ class ChatUIController {
     }
 
     handleWebSocketMessage(data) {
-        switch (data.type) {
-            case 'bot_message':
-                this.hideThinkingIndicator();
-                this.addMessage('bot', data.content);
-                break;
-            case 'thinking_steps':
-                this.updateThinkingSteps(data.content);
-                break;
-            case 'progress_update':
-                this.updateProgress(data.content);
-                break;
-            case 'error':
-                this.showError(data.content);
-                break;
+        if (data.startsWith('[CLARIFICATION]')) {
+            // Handle clarification questions
+            const questions = data.replace('[CLARIFICATION]', '');
+            this.hideThinkingIndicator();
+            this.showClarificationQuestions(questions);
+        } else if (data === '[WAITING_FOR_CLARIFICATION]') {
+            // Show clarification input UI
+            this.showClarificationInput();
+        } else if (data === '[TYPING]') {
+            this.showThinkingIndicator();
+        } else if (data === '[DONE]') {
+            this.hideThinkingIndicator();
+        } else if (data.startsWith('[CONVERSATIONS]')) {
+            const conversations = JSON.parse(data.replace('[CONVERSATIONS]', ''));
+            this.renderConversations(conversations);
+        } else {
+            // Regular message handling
+            this.hideThinkingIndicator();
+            this.addMessage('bot', data);
         }
+    }
+
+    showClarificationQuestions(questions) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'bot-message clarification-questions';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.innerHTML = this.formatMessage(questions);
+        
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        timeDiv.textContent = new Date().toLocaleTimeString();
+        
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timeDiv);
+        
+        this.chatMessages.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    showClarificationInput() {
+        // Create clarification input container
+        const inputContainer = document.createElement('div');
+        inputContainer.className = 'clarification-input-container';
+        inputContainer.innerHTML = `
+            <div class="clarification-header">
+                <i class="fas fa-info-circle"></i>
+                <span>Please provide clarifications for the questions above</span>
+            </div>
+            <textarea 
+                id="clarificationInput" 
+                placeholder="Type your clarifications here..."
+                rows="4"
+            ></textarea>
+            <div class="clarification-buttons">
+                <button id="submitClarification" class="primary-button">
+                    <i class="fas fa-paper-plane"></i>
+                    Submit Clarifications
+                </button>
+                <button id="skipClarification" class="secondary-button">
+                    <i class="fas fa-forward"></i>
+                    Skip & Proceed
+                </button>
+            </div>
+        `;
+        
+        this.chatMessages.appendChild(inputContainer);
+        this.scrollToBottom();
+        
+        // Add event listeners
+        const submitBtn = inputContainer.querySelector('#submitClarification');
+        const skipBtn = inputContainer.querySelector('#skipClarification');
+        const textarea = inputContainer.querySelector('#clarificationInput');
+        
+        submitBtn.addEventListener('click', () => {
+            const clarifications = textarea.value.trim();
+            if (clarifications) {
+                this.sendMessage(`Clarification: ${clarifications}`);
+                inputContainer.remove();
+            }
+        });
+        
+        skipBtn.addEventListener('click', () => {
+            this.sendMessage('Clarification: Skip clarification');
+            inputContainer.remove();
+        });
+        
+        // Focus the textarea
+        textarea.focus();
     }
 
     addMessage(type, content) {
