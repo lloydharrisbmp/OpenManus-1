@@ -151,9 +151,28 @@ class DividendAnalyzerTool(BaseTool):
         except Exception as e:
             raise ValueError(f"Error generating report: {str(e)}")
 
-    def execute(self, parameters: DividendAnalyzerParameters) -> Dict:
-        """Execute dividend analysis and forecasting"""
+    async def execute(self, **kwargs) -> Dict[str, Any]:
+        """
+        Execute dividend analysis and forecasting
+        
+        Args:
+            stock_code: ASX stock code (e.g., 'CBA.AX')
+            start_date: Optional start date for analysis (YYYY-MM-DD)
+            forecast_periods: Number of periods to forecast
+            output_dir: Directory to save generated reports
+            
+        Returns:
+            Dict[str, Any]: Analysis results including metrics and forecast
+        """
         try:
+            # Create parameters from kwargs
+            parameters = DividendAnalyzerParameters(
+                stock_code=kwargs.get("stock_code"),
+                start_date=kwargs.get("start_date"),
+                forecast_periods=kwargs.get("forecast_periods", 4),
+                output_dir=kwargs.get("output_dir", "client_documents/reports")
+            )
+            
             self._update_progress("Fetching dividend data...", 0.2)
             dividends_df = self._fetch_dividend_data(
                 parameters.stock_code, 

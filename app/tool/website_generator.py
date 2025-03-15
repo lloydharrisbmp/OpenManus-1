@@ -38,6 +38,18 @@ class WebsiteGeneratorTool(BaseTool):
         self._setup_directories()
         self._setup_logging()
 
+    async def execute(self, config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        """
+        Execute the website generation with the provided configuration.
+        
+        Args:
+            config: Dictionary containing website configuration
+            
+        Returns:
+            Dict[str, Any]: Result of the website generation
+        """
+        return self.generate_website(config)
+
     def _setup_directories(self) -> None:
         """Create necessary directories if they don't exist."""
         self.template_dir.mkdir(parents=True, exist_ok=True)
