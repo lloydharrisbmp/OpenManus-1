@@ -148,6 +148,9 @@ class FinancialPlanningAgent(ToolCallAgent):
             self.completed_tasks = []
             self.visualization_paths = []
             
+            # Update the agent's memory with the user message
+            self.update_memory(role="user", content=message)
+            
             # Analyze if we need to create or improve tools
             if self.tool_creator and "create tool" in message.lower():
                 result = await self.tool_creator.execute(
@@ -159,7 +162,7 @@ class FinancialPlanningAgent(ToolCallAgent):
                     self.completed_tasks.append(f"Created new tool: {result['tool_info']['name']}")
             
             # Run the agent with the message
-            response = await self.run(message)
+            response = await self.run()  # No need to pass message again as it's already in memory
             
             # Format response with progress and visualization information
             formatted_response = self._format_response_with_progress(response)
