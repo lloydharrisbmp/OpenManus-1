@@ -56,6 +56,7 @@ class FinancialPlanningAgent(ToolCallAgent):
     thinking_steps: List[str] = Field(default_factory=list)
     current_section: Optional[str] = None
     completed_tasks: List[str] = Field(default_factory=list)
+    include_disclaimers: bool = Field(default=True, description="Whether to include disclaimers in responses")
 
     max_steps: int = 5  # Reduced from 30 to 5 for testing purposes
 
@@ -66,7 +67,7 @@ class FinancialPlanningAgent(ToolCallAgent):
     execution_history: List[ToolExecutionMetrics] = Field(default_factory=list)
     visualization_paths: List[str] = Field(default_factory=list)
 
-    def __init__(self, **kwargs):
+    def __init__(self, include_disclaimers: bool = True, **kwargs):
         # Initialize tools first
         tools = [
             AustralianMarketAnalysisTool(),
@@ -82,6 +83,15 @@ class FinancialPlanningAgent(ToolCallAgent):
             Terminate()
         ]
         kwargs['available_tools'] = ToolCollection(*tools)
+        
+        # Set disclaimer flag
+        self.include_disclaimers = include_disclaimers
+        
+        # Modify system prompt to remove disclaimer requirements if needed
+        if not include_disclaimers:
+            modified_prompt = SYSTEM_PROMPT.replace("4. Include appropriate risk warnings and disclaimers\n", "")
+            kwargs['system_prompt'] = modified_prompt
+            
         super().__init__(**kwargs)
         self.tool_creator = next(
             (tool for tool in tools if isinstance(tool, ToolCreatorTool)),
@@ -174,6 +184,10 @@ class FinancialPlanningAgent(ToolCallAgent):
                     viz_section += f"- [View Visualization]({path})\n"
                 formatted_response += viz_section
             
+            # Filter out disclaimers if they should not be included
+            if not self.include_disclaimers:
+                formatted_response = self._filter_disclaimers(formatted_response)
+            
             return formatted_response
             
         except Exception as e:
@@ -210,6 +224,30 @@ class FinancialPlanningAgent(ToolCallAgent):
                 formatted_response.append(f"- Error: {self.current_metrics.error_message}")
         
         return "\n\n".join(formatted_response)
+
+    def _filter_disclaimers(self, response: str) -> str:
+        """Remove any disclaimer sections from the response."""
+        # Common patterns for disclaimer sections
+        disclaimer_patterns = [
+            r"(?i)## ?Disclaimer.*?(?=##|$)",  # Markdown heading style
+            r"(?i)\*\*Disclaimer.*?\*\*.*?(?=\n\n|\Z)",  # Bold text style
+            r"(?i)Disclaimer:.*?(?=\n\n|\Z)",  # Simple colon style
+            r"(?i)Please note:.*?(?=\n\n|\Z)",  # Note style that often contains disclaimer info
+            r"(?i)This (analysis|information|advice) is for informational purposes only.*?(?=\n\n|\Z)",  # Common disclaimer start
+            r"(?i)Past performance is not.*?future.*?(?=\n\n|\Z)"  # Common financial disclaimer
+        ]
+        
+        import re
+        filtered_response = response
+        
+        # Apply all patterns
+        for pattern in disclaimer_patterns:
+            filtered_response = re.sub(pattern, "", filtered_response, flags=re.DOTALL)
+        
+        # Clean up any extra newlines that might have been left
+        filtered_response = re.sub(r'\n{3,}', '\n\n', filtered_response)
+        
+        return filtered_response.strip()
 
     async def execute_tool(self, tool_call) -> str:
         """Execute a tool call and track metrics."""
