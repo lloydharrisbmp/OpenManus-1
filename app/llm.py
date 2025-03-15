@@ -550,3 +550,47 @@ class LLM:
         except Exception as e:
             logger.error(f"Unexpected error in ask_tool: {e}")
             raise
+
+    def get_model_info(self) -> dict:
+        """Get detailed information about the current model."""
+        model_capabilities = {
+            "claude-3-sonnet-20240229": {
+                "name": "Claude 3 Sonnet",
+                "capabilities": [
+                    "advanced reasoning",
+                    "code generation and analysis",
+                    "complex task planning",
+                    "financial analysis",
+                    "tool use",
+                    "context-aware responses"
+                ],
+                "selection_reason": "Selected for its superior performance in financial planning tasks, ability to understand complex financial concepts, and reliable tool usage capabilities."
+            },
+            "gpt-4-turbo-preview": {
+                "name": "GPT-4 Turbo",
+                "capabilities": [
+                    "advanced reasoning",
+                    "code generation",
+                    "task planning",
+                    "financial analysis",
+                    "tool use"
+                ],
+                "selection_reason": "Chosen for its strong general capabilities and reliable performance in financial analysis tasks."
+            },
+            "gemini-pro": {
+                "name": "Gemini Pro",
+                "capabilities": [
+                    "text generation",
+                    "code understanding",
+                    "basic task planning",
+                    "tool use"
+                ],
+                "selection_reason": "Used for basic financial planning tasks and general text generation."
+            }
+        }
+
+        return model_capabilities.get(self.model, {
+            "name": self.model,
+            "capabilities": ["text generation", "code understanding", "tool use"],
+            "selection_reason": f"Default model ({self.model}) for financial planning tasks"
+        })

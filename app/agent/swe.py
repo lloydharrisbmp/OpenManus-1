@@ -155,8 +155,22 @@ class FinancialPlanningAgent(ToolCallAgent):
             working_dir=self.working_dir
         )
         
-        # Store thinking step before executing it
-        thinking_step = f"Step {len(self.thinking_steps) + 1}: {self.next_step_prompt}"
+        # Get current model information
+        model_info = self.llm.get_model_info() if hasattr(self.llm, 'get_model_info') else {
+            'name': self.llm.api_type,
+            'capabilities': ['text generation', 'code understanding', 'tool use'],
+            'selection_reason': 'Default model for financial planning tasks'
+        }
+        
+        # Store thinking step with enhanced information
+        step_number = len(self.thinking_steps) + 1
+        thinking_step = f"""Step {step_number}:
+🧠 Current Task: {self.current_section or 'Processing request'}
+🤖 Model: {model_info['name']}
+📝 Capabilities: {', '.join(model_info['capabilities'])}
+🎯 Selection Reason: {model_info['selection_reason']}
+🔄 Action: {self.next_step_prompt}
+"""
         self.thinking_steps.append(thinking_step)
         
         # For Gemini models, use a simpler approach without forcing tool calls
@@ -173,8 +187,11 @@ class FinancialPlanningAgent(ToolCallAgent):
                 else None,
             )
             
-            # Log response info
-            logger.info(f"✨ {self.name}'s thoughts: {content}")
+            # Log response info with enhanced details
+            logger.info(f"""✨ {self.name}'s thoughts:
+Model: {model_info['name']}
+Task: {self.current_section or 'Processing request'}
+Response: {content}""")
             
             # Create and add assistant message
             assistant_msg = Message.assistant_message(content)
@@ -201,7 +218,7 @@ class FinancialPlanningAgent(ToolCallAgent):
                 )
 
     async def process_message(self, message: str) -> str:
-        """Process a message with enhanced tracking and visualization support."""
+        """Process a message with enhanced tracking, clarification, and visualization support."""
         try:
             # Reset tracking for new message
             self.current_section = "Understanding Request"
@@ -219,51 +236,82 @@ class FinancialPlanningAgent(ToolCallAgent):
                     message
                 )
             
+            # Generate clarification questions first
+            clarification_prompt = f"""Based on the user's request: "{message}"
+            Generate 3-5 specific follow-up questions to ensure I fully understand the task and requirements.
+            Focus on:
+            1. Any ambiguous aspects that need clarification
+            2. Specific preferences or constraints
+            3. Expected outcomes or deliverables
+            4. Any technical requirements or limitations
+            
+            Format the response as a clear numbered list of questions only."""
+            
+            clarification_response = await self.llm.ask(
+                messages=[Message.user_message(clarification_prompt)],
+                system_msgs=[Message.system_message(self.system_prompt)] if self.system_prompt else None,
+            )
+            
+            # Store clarification questions in memory
+            self.update_memory(role="assistant", content=f"Before proceeding, I'd like to clarify a few points:\n\n{clarification_response}\n\nPlease provide any clarifications you can, and I'll adjust my approach accordingly.")
+            
+            # Store clarification in conversation history
+            if self.conversation_manager and self.current_conversation_id:
+                self.conversation_manager.add_message(
+                    self.current_conversation_id,
+                    "assistant",
+                    f"Before proceeding, I'd like to clarify a few points:\n\n{clarification_response}\n\nPlease provide any clarifications you can, and I'll adjust my approach accordingly."
+                )
+            
+            # Return the clarification questions without proceeding with the task
+            return f"Before proceeding, I'd like to clarify a few points:\n\n{clarification_response}\n\nPlease provide any clarifications you can, and I'll adjust my approach accordingly."
+            
+        except Exception as e:
+            error_msg = f"Error processing message: {str(e)}"
+            logger.error(error_msg)
+            
+            # Store error in conversation history
+            if self.conversation_manager and self.current_conversation_id:
+                self.conversation_manager.add_message(
+                    self.current_conversation_id,
+                    "system",
+                    f"Error: {str(e)}"
+                )
+                
+            return error_msg
+
+    async def process_clarified_message(self, original_message: str, clarifications: str) -> str:
+        """Process the message after receiving clarifications."""
+        try:
+            # Combine original message with clarifications
+            full_context = f"Original request: {original_message}\n\nClarifications provided: {clarifications}"
+            
+            # Update the agent's memory with the clarified context
+            self.update_memory(role="system", content=full_context)
+            
+            # Store context in conversation history
+            if self.conversation_manager and self.current_conversation_id:
+                self.conversation_manager.add_message(
+                    self.current_conversation_id,
+                    "system",
+                    full_context
+                )
+            
             # Analyze if we need to create or improve tools
-            if self.tool_creator and "create tool" in message.lower():
+            if self.tool_creator and "create tool" in original_message.lower():
                 result = await self.tool_creator.execute(
-                    request=message,
-                    visualization_required="visualize" in message.lower() or "plot" in message.lower(),
-                    analytics_required="analyze" in message.lower() or "report" in message.lower()
+                    request=original_message,
+                    visualization_required="visualize" in original_message.lower() or "plot" in original_message.lower(),
+                    analytics_required="analyze" in original_message.lower() or "report" in original_message.lower()
                 )
                 if result["status"] == "success":
                     self.completed_tasks.append(f"Created new tool: {result['tool_info']['name']}")
             
-            # Run the agent with the message
-            response = await self.run()  # No need to pass message again as it's already in memory
+            # Run the agent with the clarified context
+            response = await self.run()
             
             # Format response with progress and visualization information
             formatted_response = self._format_response_with_progress(response)
-            
-            # Add visualization paths if any were generated
-            if self.visualization_paths:
-                viz_section = "\n\n## Generated Visualizations:\n"
-                for path in self.visualization_paths:
-                    # Convert to relative path if possible
-                    try:
-                        # Get just the filename for display
-                        path_obj = Path(path)
-                        filename = path_obj.name
-                        
-                        # If using conversation manager, copy file to conversation directory if it's not already there
-                        if self.conversation_manager:
-                            if not path_obj.is_relative_to(self.conversation_manager.get_conversation_path()):
-                                if path_obj.exists():
-                                    # Create a new path in the conversation directory
-                                    new_path = self.conversation_manager.get_conversation_path(filename)
-                                    # Copy the file
-                                    shutil.copy2(path, new_path)
-                                    # Update path to the new location
-                                    path = str(new_path)
-                    except Exception as e:
-                        logger.error(f"Error processing visualization path: {str(e)}")
-                    
-                    viz_section += f"- [View Visualization: {filename}]({path})\n"
-                formatted_response += viz_section
-            
-            # Filter out disclaimers if they should not be included
-            if not self.include_disclaimers:
-                formatted_response = self._filter_disclaimers(formatted_response)
             
             # Store assistant response in conversation history
             if self.conversation_manager and self.current_conversation_id:
@@ -277,7 +325,7 @@ class FinancialPlanningAgent(ToolCallAgent):
             return formatted_response
             
         except Exception as e:
-            error_msg = f"Error processing message: {str(e)}"
+            error_msg = f"Error processing clarified message: {str(e)}"
             logger.error(error_msg)
             
             # Store error in conversation history
