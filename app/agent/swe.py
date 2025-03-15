@@ -53,7 +53,7 @@ class FinancialPlanningAgent(ToolCallAgent):
     current_section: Optional[str] = None
     completed_tasks: List[str] = Field(default_factory=list)
 
-    max_steps: int = 30  # Increased to handle complex financial analysis tasks
+    max_steps: int = 5  # Reduced from 30 to 5 for testing purposes
 
     bash: Bash = Field(default_factory=Bash)
     working_dir: str = "."
