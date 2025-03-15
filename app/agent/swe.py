@@ -2,9 +2,11 @@ from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 import json
 from pathlib import Path
+import os
 
 from pydantic import Field, BaseModel
 import asyncio
+import shutil
 
 from app.agent.toolcall import ToolCallAgent
 from app.prompt.financial_planner import NEXT_STEP_TEMPLATE, SYSTEM_PROMPT
@@ -25,6 +27,7 @@ from app.tool.superannuation_analyzer import SuperannuationAnalyzerTool
 from app.tool.web_search import WebSearchTool
 from app.tool.website_generator import WebsiteGeneratorTool
 from app.logger import logger
+from app.conversation_manager import ConversationManager
 
 class ToolExecutionMetrics(BaseModel):
     """Track metrics for tool execution within the agent."""
@@ -66,8 +69,12 @@ class FinancialPlanningAgent(ToolCallAgent):
     current_metrics: Optional[ToolExecutionMetrics] = None
     execution_history: List[ToolExecutionMetrics] = Field(default_factory=list)
     visualization_paths: List[str] = Field(default_factory=list)
+    
+    # Add conversation manager
+    conversation_manager: Optional[ConversationManager] = None
+    current_conversation_id: Optional[str] = None
 
-    def __init__(self, include_disclaimers: bool = True, **kwargs):
+    def __init__(self, include_disclaimers: bool = True, conversation_title: Optional[str] = None, **kwargs):
         # Initialize tools first
         tools = [
             AustralianMarketAnalysisTool(),
@@ -87,6 +94,14 @@ class FinancialPlanningAgent(ToolCallAgent):
         # Set disclaimer flag before init
         object.__setattr__(self, 'include_disclaimers', include_disclaimers)
         
+        # Initialize conversation manager
+        object.__setattr__(self, 'conversation_manager', ConversationManager())
+        
+        # Start a new conversation
+        cm = object.__getattribute__(self, 'conversation_manager')
+        conversation_id = cm.start_new_conversation(title=conversation_title)
+        object.__setattr__(self, 'current_conversation_id', conversation_id)
+        
         # Modify system prompt to remove disclaimer requirements if needed
         if not include_disclaimers:
             modified_prompt = SYSTEM_PROMPT.replace("4. Include appropriate risk warnings and disclaimers\n", "")
@@ -97,6 +112,33 @@ class FinancialPlanningAgent(ToolCallAgent):
             (tool for tool in tools if isinstance(tool, ToolCreatorTool)),
             None
         )
+        
+        # Update tools to use conversation directory for outputs
+        self._configure_tools_for_conversation()
+    
+    def _configure_tools_for_conversation(self):
+        """Configure tools to use the conversation directory for outputs."""
+        if not self.conversation_manager:
+            return
+            
+        conversation_dir = self.conversation_manager.get_conversation_path()
+        
+        # Configure each tool that needs it
+        for tool in self.available_tools.tools:
+            # Check tool type and set output paths appropriately
+            if hasattr(tool, 'output_dir'):
+                tool.output_dir = conversation_dir
+                
+            # For specific tools with custom output directories
+            if isinstance(tool, ReportGeneratorTool) and hasattr(tool, 'report_dir'):
+                tool.report_dir = conversation_dir
+                
+            if isinstance(tool, WebsiteGeneratorTool) and hasattr(tool, 'output_dir'):
+                tool.output_dir = conversation_dir
+                
+            # For dividend analyzer
+            if hasattr(tool, 'parameters') and isinstance(tool.parameters, dict) and 'output_dir' in tool.parameters:
+                tool.parameters['output_dir'] = str(conversation_dir)
 
     async def think(self) -> bool:
         """Process current state and decide next action"""
@@ -149,6 +191,14 @@ class FinancialPlanningAgent(ToolCallAgent):
         self.last_observation = observation
         if hasattr(self, "update_memory") and callable(self.update_memory):
             self.update_memory(role="system", content=f"Observation: {observation}")
+            
+            # Store observation in conversation history
+            if self.conversation_manager and self.current_conversation_id:
+                self.conversation_manager.add_message(
+                    self.current_conversation_id,
+                    "system", 
+                    f"Observation: {observation}"
+                )
 
     async def process_message(self, message: str) -> str:
         """Process a message with enhanced tracking and visualization support."""
@@ -160,6 +210,14 @@ class FinancialPlanningAgent(ToolCallAgent):
             
             # Update the agent's memory with the user message
             self.update_memory(role="user", content=message)
+            
+            # Store user message in conversation history
+            if self.conversation_manager and self.current_conversation_id:
+                self.conversation_manager.add_message(
+                    self.current_conversation_id,
+                    "user",
+                    message
+                )
             
             # Analyze if we need to create or improve tools
             if self.tool_creator and "create tool" in message.lower():
@@ -181,18 +239,55 @@ class FinancialPlanningAgent(ToolCallAgent):
             if self.visualization_paths:
                 viz_section = "\n\n## Generated Visualizations:\n"
                 for path in self.visualization_paths:
-                    viz_section += f"- [View Visualization]({path})\n"
+                    # Convert to relative path if possible
+                    try:
+                        # Get just the filename for display
+                        path_obj = Path(path)
+                        filename = path_obj.name
+                        
+                        # If using conversation manager, copy file to conversation directory if it's not already there
+                        if self.conversation_manager:
+                            if not path_obj.is_relative_to(self.conversation_manager.get_conversation_path()):
+                                if path_obj.exists():
+                                    # Create a new path in the conversation directory
+                                    new_path = self.conversation_manager.get_conversation_path(filename)
+                                    # Copy the file
+                                    shutil.copy2(path, new_path)
+                                    # Update path to the new location
+                                    path = str(new_path)
+                    except Exception as e:
+                        logger.error(f"Error processing visualization path: {str(e)}")
+                    
+                    viz_section += f"- [View Visualization: {filename}]({path})\n"
                 formatted_response += viz_section
             
             # Filter out disclaimers if they should not be included
             if not self.include_disclaimers:
                 formatted_response = self._filter_disclaimers(formatted_response)
             
+            # Store assistant response in conversation history
+            if self.conversation_manager and self.current_conversation_id:
+                self.conversation_manager.add_message(
+                    self.current_conversation_id,
+                    "assistant",
+                    formatted_response,
+                    {"visualization_paths": self.visualization_paths.copy() if self.visualization_paths else []}
+                )
+            
             return formatted_response
             
         except Exception as e:
             error_msg = f"Error processing message: {str(e)}"
             logger.error(error_msg)
+            
+            # Store error in conversation history
+            if self.conversation_manager and self.current_conversation_id:
+                self.conversation_manager.add_message(
+                    self.current_conversation_id,
+                    "system",
+                    f"Error: {str(e)}"
+                )
+                
             return error_msg
 
     def _format_response_with_progress(self, response: str) -> str:
@@ -249,75 +344,135 @@ class FinancialPlanningAgent(ToolCallAgent):
         
         return filtered_response.strip()
 
-    async def execute_tool(self, tool_call) -> str:
-        """Execute a tool call and track metrics."""
-        if isinstance(tool_call, dict) and 'name' in tool_call and 'arguments' in tool_call:
-            tool_name = tool_call['name']
-            try:
-                args = json.loads(tool_call['arguments']) if tool_call['arguments'] else {}
-            except json.JSONDecodeError:
-                args = {}
+    async def execute_tool(self, tool_name, args):
+        """Execute a tool with the given arguments."""
+        if tool_name not in self.tools:
+            return f"Tool '{tool_name}' not found."
+        
+        tool = self.tools[tool_name]
+        
+        # Adjust file paths in arguments to be in the conversation directory
+        if self.conversation_manager and self.current_conversation_id:
+            conversation_dir = self.conversation_manager.get_conversation_directory(self.current_conversation_id)
+            if conversation_dir:
+                for arg, value in args.items():
+                    if isinstance(value, str) and ("path" in arg.lower() or "file" in arg.lower() or "dir" in arg.lower()):
+                        # If it's a relative path that doesn't already point to the conversation directory
+                        if not os.path.isabs(value) and not str(conversation_dir) not in value:
+                            args[arg] = str(conversation_dir / value)
+        
+        # Record start of execution
+        self.current_metrics = ToolExecutionMetrics(
+            tool_name=tool_name,
+            start_time=datetime.now()
+        )
 
-            # Record start of execution
-            self.current_metrics = ToolExecutionMetrics(
-                tool_name=tool_name,
-                start_time=datetime.now()
-            )
-
-            try:
-                # Find the tool in available_tools
-                tool = None
-                if hasattr(self, 'available_tools') and isinstance(self.available_tools, ToolCollection):
-                    tool = self.available_tools.get_tool(tool_name)
-                
-                if tool:
-                    result = await tool.execute(**args)
-                    
-                    # Update metrics
-                    if self.current_metrics:
-                        self.current_metrics.end_time = datetime.now()
-                        self.current_metrics.success = True
-                        # Check if result is a string or has a specific attribute
-                        if hasattr(result, 'output'):
-                            response = str(result.output)
-                            self.current_metrics.response_length = len(response)
-                        elif isinstance(result, str):
-                            response = result
-                            self.current_metrics.response_length = len(response)
-                        elif isinstance(result, dict):
-                            response = json.dumps(result)
-                            self.current_metrics.response_length = len(response)
-                            # Check for visualization paths in result
-                            if 'visualization_path' in result or 'chart_path' in result or 'report_path' in result:
-                                path = result.get('visualization_path') or result.get('chart_path') or result.get('report_path')
-                                if path and path not in self.visualization_paths:
-                                    self.visualization_paths.append(path)
-                                    self.current_metrics.has_visualization = True
-                        else:
-                            response = str(result)
-                            self.current_metrics.response_length = len(response)
-                        
-                        self.execution_history.append(self.current_metrics)
-                        self.current_metrics = None
-                    
-                    return f"Tool {tool_name} executed successfully with result: {result}"
+        try:
+            result = await tool.execute(**args)
+            
+            # Update metrics
+            if self.current_metrics:
+                self.current_metrics.end_time = datetime.now()
+                self.current_metrics.success = True
+                # Check if result is a string or has a specific attribute
+                if hasattr(result, 'output'):
+                    response = str(result.output)
+                    self.current_metrics.response_length = len(response)
+                elif isinstance(result, str):
+                    response = result
+                    self.current_metrics.response_length = len(response)
+                elif isinstance(result, dict):
+                    response = json.dumps(result)
+                    self.current_metrics.response_length = len(response)
+                    # Check for visualization paths in result
+                    for path_key in ['visualization_path', 'chart_path', 'report_path', 'output_dir', 'file_path']:
+                        if path_key in result:
+                            path = result.get(path_key)
+                            if path and path not in self.visualization_paths:
+                                # Adjust path to be within conversation directory if needed
+                                if self.conversation_manager:
+                                    path = self._ensure_path_in_conversation(path)
+                                self.visualization_paths.append(path)
+                                self.current_metrics.has_visualization = True
+                                break
                 else:
-                    if self.current_metrics:
-                        self.current_metrics.end_time = datetime.now()
-                        self.current_metrics.success = False
-                        self.current_metrics.error_message = f"Tool {tool_name} not found"
-                        self.execution_history.append(self.current_metrics)
-                        self.current_metrics = None
-                    
-                    return f"Error: Tool {tool_name} not found"
-            except Exception as e:
-                if self.current_metrics:
-                    self.current_metrics.end_time = datetime.now()
-                    self.current_metrics.success = False
-                    self.current_metrics.error_message = str(e)
-                    self.execution_history.append(self.current_metrics)
-                    self.current_metrics = None
+                    response = str(result)
+                    self.current_metrics.response_length = len(response)
                 
-                return f"Error executing tool {tool_name}: {str(e)}"
-        else:
-            return "Invalid tool call format"
+                self.execution_history.append(self.current_metrics)
+                self.current_metrics = None
+            
+            return f"Tool {tool_name} executed successfully with result: {result}"
+        except Exception as e:
+            if self.current_metrics:
+                self.current_metrics.end_time = datetime.now()
+                self.current_metrics.success = False
+                self.current_metrics.error_message = str(e)
+                self.execution_history.append(self.current_metrics)
+                self.current_metrics = None
+            
+            return f"Error executing tool {tool_name}: {str(e)}"
+
+    def _ensure_path_in_conversation(self, path: str) -> str:
+        """Ensure that the file path is within the conversation directory."""
+        if not self.conversation_manager:
+            return path
+            
+        path_obj = Path(path)
+        
+        # If path is already within conversation directory, return it
+        if path_obj.is_relative_to(self.conversation_manager.get_conversation_path()):
+            return path
+            
+        # If path exists, copy it to conversation directory
+        if path_obj.exists() and path_obj.is_file():
+            new_path = self.conversation_manager.get_conversation_path(path_obj.name)
+            shutil.copy2(path, new_path)
+            return str(new_path)
+            
+        # If path doesn't exist, return path within conversation directory
+        return str(self.conversation_manager.get_conversation_path(path_obj.name))
+        
+    async def get_available_conversations(self):
+        """Get a list of available conversations."""
+        if self.conversation_manager:
+            return self.conversation_manager.get_all_conversations()
+        return []
+        
+    async def load_conversation(self, conversation_id):
+        """Load a previous conversation."""
+        if not self.conversation_manager:
+            raise ValueError("Conversation manager not initialized")
+            
+        # Validate the conversation exists
+        conversations = self.conversation_manager.get_all_conversations()
+        exists = any(conv["id"] == conversation_id for conv in conversations)
+        if not exists:
+            raise ValueError(f"Conversation with ID {conversation_id} not found")
+            
+        # Load the conversation history
+        history = self.conversation_manager.load_conversation(conversation_id)
+        
+        # Clear current memory
+        self.memory.clear()
+        
+        # Load conversation into memory
+        for msg in history:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role and content:
+                if role == "user":
+                    self.memory.add_user_message(content)
+                elif role == "assistant":
+                    self.memory.add_assistant_message(content)
+                elif role == "system":
+                    self.memory.add_system_message(content)
+        
+        # Set as current conversation
+        self.current_conversation_id = conversation_id
+        
+        # Reconfigure tools to use this conversation directory
+        self._configure_tools_for_conversation()
+        
+        # Return the loaded conversation data
+        return history

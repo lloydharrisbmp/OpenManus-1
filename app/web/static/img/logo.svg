@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200px" height="60px" viewBox="0 0 200 60" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>BMP Advisory</title>
+    <defs>
+        <linearGradient x1="0%" y1="0%" x2="100%" y2="100%" id="logoGradient">
+            <stop stop-color="#004b87" offset="0%"></stop>
+            <stop stop-color="#0078ae" offset="100%"></stop>
+        </linearGradient>
+    </defs>
+    <g id="Logo" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="Icon" transform="translate(10, 10)">
+            <circle id="Circle" fill="url(#logoGradient)" cx="20" cy="20" r="20"></circle>
+            <text x="13" y="28" font-family="Arial-BoldMT, Arial" font-size="28" font-weight="bold" fill="#FFFFFF">B</text>
+        </g>
+        <g id="Text" transform="translate(60, 15)" fill="#004b87">
+            <text id="BMPAdvisory" font-family="Arial-BoldMT, Arial" font-size="22" font-weight="bold">
+                <tspan x="0" y="20">BMP Advisory</tspan>
+            </text>
+        </g>
+        <g id="Tagline" transform="translate(60, 35)" fill="#667788">
+            <text font-family="Arial, Arial" font-size="12" font-weight="normal" letter-spacing="0.5">
+                <tspan x="0" y="12">Build. Manage. Protect.</tspan>
+            </text>
+        </g>
+    </g>
+</svg> 
