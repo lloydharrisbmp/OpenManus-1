@@ -56,7 +56,7 @@ class FinancialPlanningAgent(ToolCallAgent):
     thinking_steps: List[str] = Field(default_factory=list)
     current_section: Optional[str] = None
     completed_tasks: List[str] = Field(default_factory=list)
-    include_disclaimers: bool = Field(default=True, description="Whether to include disclaimers in responses")
+    include_disclaimers: bool = True
 
     max_steps: int = 5  # Reduced from 30 to 5 for testing purposes
 
@@ -84,8 +84,8 @@ class FinancialPlanningAgent(ToolCallAgent):
         ]
         kwargs['available_tools'] = ToolCollection(*tools)
         
-        # Set disclaimer flag
-        self.include_disclaimers = include_disclaimers
+        # Set disclaimer flag before init
+        object.__setattr__(self, 'include_disclaimers', include_disclaimers)
         
         # Modify system prompt to remove disclaimer requirements if needed
         if not include_disclaimers:
