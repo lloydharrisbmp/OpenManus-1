@@ -24,17 +24,25 @@ class WebsiteGeneratorTool(BaseTool):
     name: str = "website_generator"
     description: str = "Generates a simple HTML website with CSS styling"
     parameters: Dict[str, Any] = {
-        "template_dir": Path(__file__).parent / "website_templates",
-        "output_dir": Path("generated_websites"),
-        "env": Environment(
-            loader=FileSystemLoader(str(Path(__file__).parent / "website_templates")),
-            trim_blocks=True,
-            lstrip_blocks=True
-        )
+        "type": "object",
+        "properties": {
+            "config": {
+                "type": "object",
+                "description": "Configuration for the website generation"
+            }
+        },
+        "required": ["config"]
     }
 
     def __init__(self):
         super().__init__()
+        self.template_dir = Path(__file__).parent / "website_templates"
+        self.output_dir = Path("generated_websites")
+        self.env = Environment(
+            loader=FileSystemLoader(str(self.template_dir)),
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
         self._setup_directories()
         self._setup_logging()
 
