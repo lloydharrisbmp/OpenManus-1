@@ -1,25 +1,45 @@
-# Global LLM configuration
+# Global LLM configuration - Primary model for complex financial analysis and planning
 [llm]
-model = "claude-3-5-sonnet"
-base_url = "https://api.openai.com/v1"
-api_key = "sk-..."
+api_type = "gemini"
+model = "gemini-2.0-pro-exp-02-05"
+api_key = "your-google-api-key"
 max_tokens = 4096
 temperature = 0.0
 
-# [llm] #AZURE OPENAI:
-# api_type= 'azure'
-# model = "YOUR_MODEL_NAME" #"gpt-4o-mini"
-# base_url = "{YOUR_AZURE_ENDPOINT.rstrip('/')}/openai/deployments/{AZURE_DEPOLYMENT_ID}"
-# api_key = "AZURE API KEY"
+# For tasks requiring detailed reasoning explanations
+[llm.thinking]
+api_type = "gemini"
+model = "gemini-2.0-flash-thinking-exp-01-21"
+api_key = "your-google-api-key"
+max_tokens = 4096
+temperature = 0.0
+
+# For image generation (charts, visualizations)
+[llm.image]
+api_type = "gemini"
+model = "gemini-2.0-flash-exp-image-generation"
+api_key = "your-google-api-key"
+max_tokens = 4096
+temperature = 0.7
+
+# Groq configuration for ultra-fast responses
+[llm.groq]
+api_type = "groq"
+model = "qwen-qwq-32b"
+api_key = "your-groq-api-key"
+base_url = "https://api.groq.com/v1"
+max_tokens = 4096
+temperature = 0.0
+
+# Azure OpenAI configuration (commented out but preserved)
+# [llm.azure]
+# api_type = "azure"
+# model = "YOUR_MODEL_NAME"
+# base_url = "{YOUR_AZURE_ENDPOINT}/openai/deployments/{AZURE_DEPLOYMENT_ID}"
+# api_key = "AZURE_API_KEY"
 # max_tokens = 8096
 # temperature = 0.0
-# api_version="AZURE API VERSION" #"2024-08-01-preview"
-
-# Optional configuration for specific LLM models
-[llm.vision]
-model = "claude-3-5-sonnet"
-base_url = "https://api.openai.com/v1"
-api_key = "sk-..."
+# api_version = "2024-02-15-preview"
 
 # Optional configuration for specific browser configuration
 # [browser]

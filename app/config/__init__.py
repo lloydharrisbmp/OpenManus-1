@@ -4,14 +4,15 @@ from pydantic import BaseModel, Field
 
 class LLMSettings(BaseModel):
     """Settings for the LLM configuration."""
-    model: str = Field(default="gpt-4-turbo-preview", description="The model to use for LLM calls")
+    model: str = Field(default="gemini-2.0-pro-exp-02-05", description="The model to use for LLM calls")
     temperature: float = Field(default=0.7, description="Temperature for response generation")
     max_tokens: Optional[int] = Field(default=None, description="Maximum tokens in response")
-    api_key: Optional[str] = Field(default=None, description="OpenAI API key")
+    api_key: Optional[str] = Field(default=None, description="API key for the model provider")
     organization: Optional[str] = Field(default=None, description="OpenAI organization ID")
-    api_type: str = Field(default="openai", description="API type (openai or azure)")
+    api_type: str = Field(default="gemini", description="API type (openai, azure, gemini, or groq)")
     api_version: Optional[str] = Field(default=None, description="API version for Azure")
     base_url: Optional[str] = Field(default=None, description="Base URL for API")
+    model_type: Optional[str] = Field(default=None, description="Model type (pro, flash-thinking, flash-image)")
 
 class ToolConfig(BaseModel):
     """Configuration for a tool."""

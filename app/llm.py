@@ -10,6 +10,18 @@ from openai import (
 )
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
+# Import Google Generative AI
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+# Import Groq
+try:
+    from groq import AsyncGroq
+except ImportError:
+    AsyncGroq = None
+
 from app.config import LLMSettings, config
 from app.logger import logger  # Assuming a logger is set up in your app
 from app.schema import (
@@ -49,7 +61,28 @@ class LLM:
             self.api_key = llm_config.api_key
             self.api_version = llm_config.api_version
             self.base_url = llm_config.base_url
-            if self.api_type == "azure":
+            self.model_type = llm_config.model_type
+            
+            if self.api_type == "gemini":
+                if genai is None:
+                    raise ImportError("Please install google-generativeai package: pip install google-generativeai")
+                genai.configure(api_key=self.api_key)
+                self.client = genai.GenerativeModel(self.model)
+                # Determine model type if not explicitly set
+                if not self.model_type:
+                    if "flash-thinking" in self.model:
+                        self.model_type = "flash-thinking"
+                    elif "flash-exp-image" in self.model:
+                        self.model_type = "flash-image"
+                    elif "pro" in self.model:
+                        self.model_type = "pro"
+                    else:
+                        self.model_type = "flash"
+            elif self.api_type == "groq":
+                if AsyncGroq is None:
+                    raise ImportError("Please install groq package: pip install groq")
+                self.client = AsyncGroq(api_key=self.api_key)
+            elif self.api_type == "azure":
                 self.client = AsyncAzureOpenAI(
                     base_url=self.base_url,
                     api_key=self.api_key,
@@ -142,42 +175,110 @@ class LLM:
             else:
                 messages = self.format_messages(messages)
 
-            params = {
-                "model": self.model,
-                "messages": messages,
-            }
-
-            if self.model in REASONING_MODELS:
-                params["max_completion_tokens"] = self.max_tokens
+            # Handle Gemini models
+            if self.api_type == "gemini":
+                # Convert messages to Gemini format
+                gemini_messages = []
+                for msg in messages:
+                    role = "user" if msg["role"] == "user" else "model"
+                    content = msg.get("content", "")
+                    gemini_messages.append({"role": role, "parts": [content]})
+                
+                # Handle different Gemini model types
+                if self.model_type == "flash-thinking":
+                    # Optimize for detailed reasoning
+                    response = await self.client.generate_content_async(
+                        gemini_messages[-1]["parts"][0],
+                        generation_config={
+                            "temperature": temperature or self.temperature,
+                            "max_output_tokens": self.max_tokens,
+                            "candidate_count": 1,
+                        }
+                    )
+                elif self.model_type == "flash-image":
+                    # Handle image generation
+                    response = await self.client.generate_content_async(
+                        gemini_messages[-1]["parts"][0],
+                        generation_config={
+                            "temperature": temperature or self.temperature,
+                            "max_output_tokens": self.max_tokens,
+                        }
+                    )
+                else:
+                    # Pro model with full chat capabilities
+                    chat = self.client.start_chat(history=gemini_messages[:-1])
+                    response = await chat.send_message_async(
+                        gemini_messages[-1]["parts"][0],
+                        generation_config={
+                            "temperature": temperature or self.temperature,
+                            "max_output_tokens": self.max_tokens,
+                        }
+                    )
+                return response.text
+            
+            # Handle Groq models
+            elif self.api_type == "groq":
+                params = {
+                    "model": self.model,
+                    "messages": messages,
+                    "max_tokens": self.max_tokens,
+                    "temperature": temperature or self.temperature,
+                    "stream": stream,
+                }
+                
+                if not stream:
+                    response = await self.client.chat.completions.create(**params)
+                    return response.choices[0].message.content
+                else:
+                    response = await self.client.chat.completions.create(**params)
+                    collected_messages = []
+                    async for chunk in response:
+                        chunk_message = chunk.choices[0].delta.content or ""
+                        collected_messages.append(chunk_message)
+                        print(chunk_message, end="", flush=True)
+                    
+                    print()  # Newline after streaming
+                    full_response = "".join(collected_messages).strip()
+                    return full_response
+            
+            # Handle OpenAI and Azure models
             else:
-                params["max_tokens"] = self.max_tokens
-                params["temperature"] = temperature or self.temperature
+                params = {
+                    "model": self.model,
+                    "messages": messages,
+                }
 
-            if not stream:
-                # Non-streaming request
-                params["stream"] = False
+                if self.model in REASONING_MODELS:
+                    params["max_completion_tokens"] = self.max_tokens
+                else:
+                    params["max_tokens"] = self.max_tokens
+                    params["temperature"] = temperature or self.temperature
 
+                if not stream:
+                    # Non-streaming request
+                    params["stream"] = False
+
+                    response = await self.client.chat.completions.create(**params)
+
+                    if not response.choices or not response.choices[0].message.content:
+                        raise ValueError("Empty or invalid response from LLM")
+                    return response.choices[0].message.content
+
+                # Streaming request
+                params["stream"] = True
                 response = await self.client.chat.completions.create(**params)
 
-                if not response.choices or not response.choices[0].message.content:
-                    raise ValueError("Empty or invalid response from LLM")
-                return response.choices[0].message.content
+                collected_messages = []
+                async for chunk in response:
+                    chunk_message = chunk.choices[0].delta.content or ""
+                    collected_messages.append(chunk_message)
+                    print(chunk_message, end="", flush=True)
 
-            # Streaming request
-            params["stream"] = True
-            response = await self.client.chat.completions.create(**params)
-
-            collected_messages = []
-            async for chunk in response:
-                chunk_message = chunk.choices[0].delta.content or ""
-                collected_messages.append(chunk_message)
-                print(chunk_message, end="", flush=True)
-
-            print()  # Newline after streaming
-            full_response = "".join(collected_messages).strip()
-            if not full_response:
-                raise ValueError("Empty response from streaming LLM")
-            return full_response
+                print()  # Newline after streaming
+                full_response = "".join(collected_messages).strip()
+                if not full_response:
+                    raise ValueError("Empty response from streaming LLM")
+                return full_response
 
         except ValueError as ve:
             logger.error(f"Validation error: {ve}")
@@ -240,31 +341,117 @@ class LLM:
                 for tool in tools:
                     if not isinstance(tool, dict) or "type" not in tool:
                         raise ValueError("Each tool must be a dict with 'type' field")
-
-            # Set up the completion request
-            params = {
-                "model": self.model,
-                "messages": messages,
-                "tools": tools,
-                "tool_choice": tool_choice,
-                "timeout": timeout,
-                **kwargs,
-            }
-
-            if self.model in REASONING_MODELS:
-                params["max_completion_tokens"] = self.max_tokens
+            
+            # Handle Gemini models for tool calls
+            if self.api_type == "gemini":
+                # Convert OpenAI tool format to Gemini function format if needed
+                gemini_tools = []
+                if tools:
+                    for tool in tools:
+                        if tool["type"] == "function":
+                            gemini_tools.append({
+                                "name": tool["function"]["name"],
+                                "description": tool["function"].get("description", ""),
+                                "parameters": tool["function"].get("parameters", {})
+                            })
+                
+                # Convert messages to Gemini format
+                gemini_messages = []
+                for msg in messages:
+                    role = "user" if msg["role"] == "user" else "model"
+                    content = msg.get("content", "")
+                    gemini_messages.append({"role": role, "parts": [content]})
+                
+                # Set up function calling
+                if gemini_tools and self.model_type in ["pro", "flash-thinking"]:
+                    chat = self.client.start_chat(history=gemini_messages[:-1])
+                    response = await chat.send_message_async(
+                        gemini_messages[-1]["parts"][0],
+                        tools=gemini_tools,
+                        generation_config={
+                            "temperature": temperature or self.temperature,
+                            "max_output_tokens": self.max_tokens,
+                        }
+                    )
+                    
+                    # Convert Gemini response to OpenAI-like format
+                    if response.candidates and response.candidates[0].content.parts:
+                        function_calls = []
+                        for part in response.candidates[0].content.parts:
+                            if hasattr(part, 'function_call'):
+                                function_calls.append({
+                                    "id": f"call_{len(function_calls)}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": part.function_call.name,
+                                        "arguments": part.function_call.args
+                                    }
+                                })
+                        
+                        return {
+                            "role": "assistant",
+                            "content": response.text if not function_calls else None,
+                            "tool_calls": function_calls if function_calls else None
+                        }
+                    return {"role": "assistant", "content": response.text}
+                else:
+                    # Fall back to regular response if tools not supported
+                    chat = self.client.start_chat(history=gemini_messages[:-1])
+                    response = await chat.send_message_async(
+                        gemini_messages[-1]["parts"][0],
+                        generation_config={
+                            "temperature": temperature or self.temperature,
+                            "max_output_tokens": self.max_tokens,
+                        }
+                    )
+                    return {"role": "assistant", "content": response.text}
+            
+            # Handle Groq models
+            elif self.api_type == "groq":
+                params = {
+                    "model": self.model,
+                    "messages": messages,
+                    "max_tokens": self.max_tokens,
+                    "temperature": temperature or self.temperature,
+                    "timeout": timeout,
+                    **kwargs,
+                }
+                
+                if tools:
+                    params["tools"] = tools
+                    params["tool_choice"] = tool_choice
+                
+                response = await self.client.chat.completions.create(**params)
+                return response.choices[0].message
+            
+            # Handle OpenAI and Azure models
             else:
-                params["max_tokens"] = self.max_tokens
-                params["temperature"] = temperature or self.temperature
+                # Set up the completion request
+                params = {
+                    "model": self.model,
+                    "messages": messages,
+                    "timeout": timeout,
+                    **kwargs,
+                }
+                
+                if tools:
+                    params["tools"] = tools
+                    params["tool_choice"] = tool_choice
 
-            response = await self.client.chat.completions.create(**params)
+                if self.model in REASONING_MODELS:
+                    params["max_completion_tokens"] = self.max_tokens
+                else:
+                    params["max_tokens"] = self.max_tokens
+                    params["temperature"] = temperature or self.temperature
 
-            # Check if response is valid
-            if not response.choices or not response.choices[0].message:
-                print(response)
-                raise ValueError("Invalid or empty response from LLM")
+                response = await self.client.chat.completions.create(**params)
 
-            return response.choices[0].message
+                # Check if response is valid
+                if not response.choices or not response.choices[0].message:
+                    print(response)
+                    raise ValueError("Invalid or empty response from LLM")
+
+                return response.choices[0].message
 
         except ValueError as ve:
             logger.error(f"Validation error in ask_tool: {ve}")
