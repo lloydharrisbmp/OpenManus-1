@@ -1,51 +1,58 @@
-pydantic~=2.10.4
-openai~=1.58.1
-tenacity~=9.0.0
-pyyaml~=6.0.2
-loguru~=0.7.3
-numpy
-datasets~=3.2.0
-fastapi~=0.115.11
+# Core dependencies
+fastapi==0.68.1
+uvicorn==0.15.0
+python-multipart==0.0.5
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+pydantic==1.8.2
+email-validator==1.1.3
+python-dotenv==0.19.0
 
-html2text~=2024.2.26
-gymnasium~=1.0.0
-pillow~=10.4.0
-browsergym~=0.13.3
-uvicorn~=0.34.0
-unidiff~=0.7.5
-browser-use~=0.1.40
-googlesearch-python~=1.3.0
+# Database
+sqlalchemy==1.4.23
+aiosqlite==0.17.0
+alembic==1.7.1
 
-aiofiles==23.2.1
-pydantic_core~=2.27.2
-colorama~=0.4.6
-playwright~=1.49.1
+# Testing
+pytest==6.2.5
+pytest-asyncio==0.15.1
+httpx==0.19.0
+pytest-cov==2.12.1
+pytest-mock==3.6.1
 
-# Web UI dependencies
-websockets~=12.0
-python-multipart~=0.0.9
-jinja2~=3.1.3
+# Security
+cryptography==3.4.8
+fastapi-limiter==0.1.4
+bcrypt==3.2.0
 
-# Financial analysis packages
-yfinance~=0.2.36
-pandas~=2.2.1
-matplotlib~=3.8.3
-scipy~=1.12.0  # For portfolio optimization calculations
-PyPDF2~=3.0.1  # For PDF document analysis
-
-groq==0.4.0
-aiohttp==3.9.1
-pydantic==2.5.2
-googlesearch-python==1.2.3
+# Async utilities
+aiofiles==0.7.0
 asyncio==3.4.3
-python-dotenv==1.0.0
-psutil>=5.9.0
-plotly>=5.18.0
-pandas>=2.1.0
+aiohttp==3.7.4
 
-aiosqlite==0.19.0
+# Logging and monitoring
+loguru==0.5.3
+structlog==21.1.0
+prometheus-client==0.11.0
 
-# Model providers
-openai>=1.0.0
-google-generativeai>=0.3.0
-groq>=0.4.0
+# Data processing
+pandas==1.3.3
+numpy==1.21.2
+scikit-learn==0.24.2
+
+# Documentation
+mkdocs==1.2.3
+mkdocs-material==7.3.0
+
+# Development tools
+black==21.7b0
+flake8==3.9.2
+mypy==0.910
+isort==5.9.3
+pre-commit==2.15.0
+
+# Optional dependencies
+redis==3.5.3  # For rate limiting
+requests==2.26.0  # For external API calls
+beautifulsoup4==4.9.3  # For web scraping
+python-dateutil==2.8.2

@@ -7,7 +7,7 @@ portfolio performance, and agent status.
 
 import asyncio
 import json
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Set
 from datetime import datetime
 import uuid
 
@@ -15,7 +15,7 @@ from fastapi import WebSocket, WebSocketDisconnect, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.logger import logger
-from app.web.auth import get_current_active_user as get_current_user
+from app.web.auth import get_current_active_user as get_current_user, decode_and_validate_token
 from app.services.cache_service import cache_service
 
 
@@ -273,89 +273,143 @@ class UpdateMessage(BaseModel):
     timestamp: datetime = datetime.now()
 
 
-async def handle_websocket_connection(websocket: WebSocket, client_id: str, user):
-    """
-    Handle a WebSocket connection.
-    
-    Args:
-        websocket: WebSocket connection
-        client_id: Client identifier
-        user: Authenticated user
-    """
-    session_id = await websocket_manager.connect(websocket, client_id, user.username)
-    
+# Store active connections
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, Set[WebSocket]] = {}
+        self._lock = asyncio.Lock()
+
+    async def connect(self, websocket: WebSocket, client_id: str):
+        async with self._lock:
+            if client_id not in self.active_connections:
+                self.active_connections[client_id] = set()
+            self.active_connections[client_id].add(websocket)
+
+    async def disconnect(self, websocket: WebSocket, client_id: str):
+        async with self._lock:
+            if client_id in self.active_connections:
+                self.active_connections[client_id].discard(websocket)
+                if not self.active_connections[client_id]:
+                    del self.active_connections[client_id]
+
+    async def broadcast_to_client(self, client_id: str, message: str):
+        if client_id in self.active_connections:
+            for connection in self.active_connections[client_id].copy():
+                try:
+                    await connection.send_text(message)
+                except Exception as e:
+                    logger.error(f"Error broadcasting to client {client_id}: {e}")
+                    await self.disconnect(connection, client_id)
+
+manager = ConnectionManager()
+
+async def handle_websocket_connection(websocket: WebSocket, client_id: str, user: dict):
+    """Handle authenticated WebSocket connection."""
     try:
-        # Send welcome message
-        welcome_message = {
-            "type": "welcome",
-            "message": f"Welcome, {user.full_name or user.username}!",
-            "user_id": user.username,
-            "session_id": session_id,
+        await manager.connect(websocket, client_id)
+        await websocket.send_json({
+            "type": "connection_established",
+            "client_id": client_id,
             "timestamp": datetime.now().isoformat()
-        }
-        await websocket.send_json(welcome_message)
-        
-        # Handle incoming messages
+        })
+
         while True:
-            data = await websocket.receive_json()
-            
-            # Handle subscription requests
-            if data.get("action") == "subscribe":
-                if data.get("target") == "market_data":
-                    websocket_manager.subscribe_to_market_data(session_id)
-                    await websocket.send_json({
-                        "type": "subscription_confirmation",
-                        "target": "market_data",
-                        "status": "subscribed",
-                        "timestamp": datetime.now().isoformat()
-                    })
-                
-                elif data.get("target") == "portfolio" and data.get("portfolio_id"):
-                    portfolio_id = data.get("portfolio_id")
-                    websocket_manager.subscribe_to_portfolio(session_id, portfolio_id)
-                    await websocket.send_json({
-                        "type": "subscription_confirmation",
-                        "target": "portfolio",
-                        "portfolio_id": portfolio_id,
-                        "status": "subscribed",
-                        "timestamp": datetime.now().isoformat()
-                    })
-            
-            # Handle unsubscription requests
-            elif data.get("action") == "unsubscribe":
-                if data.get("target") == "market_data":
-                    websocket_manager.unsubscribe_from_market_data(session_id)
-                    await websocket.send_json({
-                        "type": "subscription_confirmation",
-                        "target": "market_data",
-                        "status": "unsubscribed",
-                        "timestamp": datetime.now().isoformat()
-                    })
-                
-                elif data.get("target") == "portfolio" and data.get("portfolio_id"):
-                    portfolio_id = data.get("portfolio_id")
-                    websocket_manager.unsubscribe_from_portfolio(session_id, portfolio_id)
-                    await websocket.send_json({
-                        "type": "subscription_confirmation",
-                        "target": "portfolio",
-                        "portfolio_id": portfolio_id,
-                        "status": "unsubscribed",
-                        "timestamp": datetime.now().isoformat()
-                    })
-            
-            # Echo any other messages with timestamp
-            else:
-                await websocket.send_json({
-                    "type": "echo",
-                    "data": data,
-                    "timestamp": datetime.now().isoformat()
-                })
-    
-    except WebSocketDisconnect:
-        await websocket_manager.disconnect(client_id, session_id, user.username)
+            try:
+                data = await websocket.receive_text()
+                # Process received data
+                try:
+                    message = json.loads(data)
+                    # Add message validation here
+                    if not isinstance(message, dict):
+                        await websocket.send_json({"error": "Invalid message format"})
+                        continue
+
+                    # Process different message types
+                    message_type = message.get("type")
+                    if not message_type:
+                        await websocket.send_json({"error": "Message type required"})
+                        continue
+
+                    # Handle different message types
+                    if message_type == "ping":
+                        await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
+                    else:
+                        # Process other message types
+                        await process_message(websocket, client_id, user, message)
+
+                except json.JSONDecodeError:
+                    await websocket.send_json({"error": "Invalid JSON format"})
+                    continue
+
+            except WebSocketDisconnect:
+                break
+
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        await websocket_manager.disconnect(client_id, session_id, user.username)
+        logger.error(f"Error in WebSocket connection handler: {e}")
+    finally:
+        await manager.disconnect(websocket, client_id)
+
+async def process_message(websocket: WebSocket, client_id: str, user: dict, message: dict):
+    """Process different types of WebSocket messages."""
+    try:
+        message_type = message["type"]
+        
+        # Add your message processing logic here
+        # Example:
+        if message_type == "request_update":
+            await websocket.send_json({
+                "type": "update",
+                "data": {"timestamp": datetime.now().isoformat()}
+            })
+        else:
+            await websocket.send_json({
+                "error": f"Unsupported message type: {message_type}"
+            })
+
+    except Exception as e:
+        logger.error(f"Error processing message: {e}")
+        await websocket.send_json({
+            "error": f"Error processing message: {str(e)}"
+        })
+
+def setup_websocket_routes(app):
+    """Set up WebSocket routes with enhanced security."""
+    
+    @app.websocket("/ws/{client_id}")
+    async def websocket_endpoint(websocket: WebSocket, client_id: str):
+        await websocket.accept()
+        
+        try:
+            # Wait for authentication message with timeout
+            auth_message = await asyncio.wait_for(
+                websocket.receive_json(),
+                timeout=10.0  # 10 second timeout for authentication
+            )
+            
+            if not auth_message.get("token"):
+                await websocket.send_json({"error": "Authentication required"})
+                await websocket.close()
+                return
+            
+            # Validate token and get user
+            user = await decode_and_validate_token(auth_message.get("token"))
+            if not user:
+                await websocket.send_json({"error": "Invalid authentication token"})
+                await websocket.close()
+                return
+            
+            # Proceed with authenticated connection
+            await handle_websocket_connection(websocket, client_id, user.dict())
+            
+        except asyncio.TimeoutError:
+            await websocket.send_json({"error": "Authentication timeout"})
+            await websocket.close()
+        except WebSocketDisconnect:
+            logger.info(f"Client {client_id} disconnected during authentication")
+        except Exception as e:
+            logger.error(f"Error in websocket endpoint: {e}")
+            await websocket.send_json({"error": "Internal server error"})
+            await websocket.close()
 
 
 async def start_market_data_broadcaster():
@@ -376,55 +430,6 @@ async def start_market_data_broadcaster():
         except Exception as e:
             logger.error(f"Error in market data broadcaster: {e}")
             await asyncio.sleep(10)
-
-
-def setup_websocket_routes(app):
-    """
-    Set up WebSocket routes for the application.
-    
-    Args:
-        app: FastAPI application
-    """
-    @app.websocket("/ws/{client_id}")
-    async def websocket_endpoint(websocket: WebSocket, client_id: str):
-        """
-        WebSocket endpoint requiring authentication.
-        Client must send a valid JWT token in the first message.
-        """
-        await websocket.accept()
-        
-        try:
-            # Wait for authentication message
-            auth_data = await websocket.receive_json()
-            
-            if not auth_data.get("token"):
-                await websocket.send_json({"error": "Authentication required"})
-                await websocket.close()
-                return
-            
-            # Validate token and get user
-            try:
-                # This is a simplified verification - in a real app, use proper token validation
-                from app.web.auth import decode_and_validate_token
-                user = await decode_and_validate_token(auth_data.get("token"))
-                
-                if not user:
-                    await websocket.send_json({"error": "Invalid authentication token"})
-                    await websocket.close()
-                    return
-                
-                # Proceed with authenticated connection
-                await handle_websocket_connection(websocket, client_id, user)
-            
-            except Exception as e:
-                logger.error(f"Authentication error: {e}")
-                await websocket.send_json({"error": "Authentication failed"})
-                await websocket.close()
-        
-        except WebSocketDisconnect:
-            logger.info(f"Client {client_id} disconnected during authentication")
-        except Exception as e:
-            logger.error(f"Error in websocket endpoint: {e}")
 
 
 def start_background_tasks(app):

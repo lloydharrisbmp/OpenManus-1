@@ -65,7 +65,7 @@ cleanup_results = await manus.finalize()
 
 ### Core Components
 
-1. **Parallel Execution Engine**: 
+1. **Parallel Execution Engine**:
    - `run_parallel_tools()`: Executes multiple tools in parallel with concurrency control
    - `_execute_with_semaphore()`: Handles individual tool execution with semaphore limits
 
@@ -153,4 +153,4 @@ The enhanced Manus is designed for extensibility. Potential future improvements 
 2. **Automatic Retry Logic**: Smart retries for transient failures
 3. **Tool Priority Scheduling**: Executing high-priority tools first
 4. **Execution Graph Visualization**: Visual representation of tool execution flows
-5. **Predictive Failure Analysis**: Using history to predict and prevent failures 
+5. **Predictive Failure Analysis**: Using history to predict and prevent failures

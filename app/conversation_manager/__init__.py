@@ -14,15 +14,13 @@ class ConversationManager:
         """Initialize the conversation manager.
         
         Args:
-            base_dir: Optional base directory for client documents. If not provided,
-                     will use 'client_documents' in the current directory.
+            base_dir: Optional base directory for conversations. If not provided,
+                     will use 'Conversation History' in the current directory.
         """
-        self.base_dir = Path(base_dir) if base_dir else Path("client_documents")
-        self.conversations_dir = self.base_dir / "conversations"
+        self.base_dir = Path(base_dir) if base_dir else Path("Conversation History")
         
-        # Create directories if they don't exist
+        # Create directory if it doesn't exist
         self.base_dir.mkdir(exist_ok=True)
-        self.conversations_dir.mkdir(exist_ok=True)
     
     def start_new_conversation(self, title: Optional[str] = None) -> str:
         """Start a new conversation.
@@ -36,9 +34,11 @@ class ConversationManager:
         timestamp = datetime.now().isoformat()
         conversation_id = f"conv_{uuid.uuid4().hex[:8]}_{int(datetime.now().timestamp())}"
         
-        # Create conversation directory
-        conversation_dir = self.conversations_dir / conversation_id
+        # Create conversation directory with subdirectories for uploaded and generated docs
+        conversation_dir = self.base_dir / conversation_id
         conversation_dir.mkdir(exist_ok=True)
+        (conversation_dir / "uploaded_docs").mkdir(exist_ok=True)
+        (conversation_dir / "generated_docs").mkdir(exist_ok=True)
         
         # Initialize conversation metadata
         metadata = {
@@ -71,7 +71,7 @@ class ConversationManager:
         Returns:
             True if successful, False otherwise.
         """
-        conversation_dir = self.conversations_dir / conversation_id
+        conversation_dir = self.base_dir / conversation_id
         if not conversation_dir.exists():
             return False
         
@@ -123,10 +123,14 @@ class ConversationManager:
         Returns:
             The path to save the file.
         """
-        conversation_dir = self.conversations_dir / conversation_id
+        conversation_dir = self.base_dir / conversation_id
         if not conversation_dir.exists():
             conversation_dir.mkdir(exist_ok=True)
+            (conversation_dir / "uploaded_docs").mkdir(exist_ok=True)
+            (conversation_dir / "generated_docs").mkdir(exist_ok=True)
         
+        # Determine if this is a generated file or uploaded file based on the context
+        # For now, store all files in the conversation root, but we can modify this later
         return conversation_dir / filename
     
     def get_conversation_path(self, filename: Optional[str] = None) -> Path:
@@ -146,7 +150,7 @@ class ConversationManager:
         else:
             conversation_id = conversations[0]["id"]
             
-        conversation_dir = self.conversations_dir / conversation_id
+        conversation_dir = self.base_dir / conversation_id
         
         if filename:
             return conversation_dir / filename
@@ -162,7 +166,7 @@ class ConversationManager:
         Returns:
             The path to the conversation directory, or None if it doesn't exist.
         """
-        conversation_dir = self.conversations_dir / conversation_id
+        conversation_dir = self.base_dir / conversation_id
         return conversation_dir if conversation_dir.exists() else None
     
     def get_all_conversations(self) -> List[Dict[str, Any]]:
@@ -173,10 +177,10 @@ class ConversationManager:
         """
         conversations = []
         
-        if not self.conversations_dir.exists():
+        if not self.base_dir.exists():
             return []
         
-        for conversation_dir in self.conversations_dir.iterdir():
+        for conversation_dir in self.base_dir.iterdir():
             if not conversation_dir.is_dir():
                 continue
             
@@ -203,7 +207,7 @@ class ConversationManager:
         Returns:
             A list of dictionaries with message data.
         """
-        conversation_dir = self.conversations_dir / conversation_id
+        conversation_dir = self.base_dir / conversation_id
         conversation_file = conversation_dir / "conversation.json"
         
         if not conversation_file.exists():
@@ -231,7 +235,7 @@ class ConversationManager:
                 return []
             conversation_id = conversations[0]["id"]
         
-        conversation_dir = self.conversations_dir / conversation_id
+        conversation_dir = self.base_dir / conversation_id
         if not conversation_dir.exists():
             return []
         
@@ -251,7 +255,7 @@ class ConversationManager:
         Returns:
             True if successful, False otherwise.
         """
-        conversation_dir = self.conversations_dir / conversation_id
+        conversation_dir = self.base_dir / conversation_id
         metadata_file = conversation_dir / "metadata.json"
         
         if not metadata_file.exists():
@@ -280,7 +284,7 @@ class ConversationManager:
         Returns:
             True if successful, False otherwise.
         """
-        conversation_dir = self.conversations_dir / conversation_id
+        conversation_dir = self.base_dir / conversation_id
         
         if not conversation_dir.exists():
             return False

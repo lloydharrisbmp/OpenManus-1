@@ -139,4 +139,4 @@ The supercharged BaseAgent is designed for extensibility. Future enhancements ma
 - Automatic retry strategies for failed steps
 - Enhanced memory management for long-running agents
 - Integration with monitoring and observability systems
-- Automatic tool selection based on task requirements 
+- Automatic tool selection based on task requirements

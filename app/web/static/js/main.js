@@ -261,561 +261,372 @@ class ChatWebSocket {
 
 // Chat UI Controller
 class ChatUIController {
-    constructor(clientId) {
-        this.clientId = clientId;
-        this.ws = new ChatWebSocket(clientId);
-        this.conversations = [];
+    constructor() {
+        this.messageInput = document.getElementById('messageInput');
+        this.chatForm = document.getElementById('chatForm');
+        this.chatMessages = document.getElementById('chatMessages');
+        this.filePreview = document.getElementById('filePreview');
+        this.conversationTitle = document.getElementById('conversationTitle');
+        this.saveTitleBtn = document.getElementById('saveTitleBtn');
+        this.newConversationBtn = document.getElementById('newConversationBtn');
+        this.conversationsList = document.getElementById('conversationsList');
+        this.searchInput = document.getElementById('searchConversations');
+        this.progressItems = document.getElementById('progressItems');
+        this.fileList = document.getElementById('fileList');
+        this.toastContainer = document.getElementById('toastContainer');
+        
         this.currentConversationId = null;
-        this.uploadedFiles = [];
-        this.modals = {};
+        this.socket = null;
+        this.files = new Map();
         
-        // Initialize
-        this.initializeUI();
-    }
-    
-    initializeUI() {
-        // Set up marked.js for markdown rendering
-        marked.setOptions({
-            breaks: true,
-            highlight: function (code, lang) {
-                if (lang && hljs.getLanguage(lang)) {
-                    try {
-                        return hljs.highlight(code, { language: lang }).value;
-                    } catch (e) {
-                        console.error("Highlight error:", e);
-                        return code;
-                    }
-                }
-                return hljs.highlightAuto(code).value;
-            },
-            gfm: true
-        });
-        
-        // Initialize modals
-        this.modals.newConversation = new bootstrap.Modal(document.getElementById('newConversationModal'));
-        
-        // Connect WebSocket
-        this.ws.connect();
-        
-        // Set up event listeners
         this.setupEventListeners();
-        
-        // Set up WebSocket handlers
-        this.setupWebSocketHandlers();
-        
-        // Update UI for mobile if needed
-        setupMobileControls();
-        window.addEventListener('resize', setupMobileControls);
+        this.initializeWebSocket();
+        this.loadConversations();
     }
-    
+
     setupEventListeners() {
-        // Chat form submission
-        document.getElementById('chatForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.sendMessage();
-        });
-        
-        // New conversation button
-        document.getElementById('newConversationBtn').addEventListener('click', () => {
-            this.modals.newConversation.show();
-        });
-        
-        // Start conversation button (empty state)
-        document.getElementById('startConversationBtn').addEventListener('click', () => {
-            this.modals.newConversation.show();
-        });
-        
-        // Create conversation button in modal
-        document.getElementById('createConversationBtn').addEventListener('click', () => {
-            const title = document.getElementById('newConversationTitle').value || "Financial Planning Session";
-            this.ws.send(`/new ${title}`);
-            this.modals.newConversation.hide();
-        });
-        
-        // Save conversation title button
-        document.getElementById('saveConversationTitle').addEventListener('click', () => {
-            if (this.currentConversationId) {
-                const title = document.getElementById('conversationTitle').value;
-                if (title) {
-                    this.ws.send(`/rename ${title}`);
-                }
+        // Message input handling
+        this.messageInput.addEventListener('keydown', (e) => {
+            // Submit on Command+Enter (Mac) or Control+Enter (Windows/Linux)
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                this.chatForm.dispatchEvent(new Event('submit'));
+                return;
             }
-        });
-        
-        // File upload
-        document.getElementById('fileInput').addEventListener('change', this.handleFileUpload.bind(this));
-        
-        // Auto-resize message input
-        const messageInput = document.getElementById('messageInput');
-        messageInput.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = (this.scrollHeight) + 'px';
-        });
-        
-        // Conversation search
-        document.getElementById('conversationSearch').addEventListener('input', (e) => {
-            this.filterConversations(e.target.value);
-        });
-    }
-    
-    setupWebSocketHandlers() {
-        // Regular message
-        this.ws.on('message', (data) => {
-            // Handle thinking steps differently
-            if (data.startsWith("🤔 Thinking Process:")) {
-                this.addThinkingSteps(data);
-            } else {
-                this.addBotMessage(data);
-            }
-        });
-        
-        // Typing indicator
-        this.ws.on('typing', () => {
-            document.getElementById('typingIndicator').style.display = 'block';
-            this.scrollToBottom();
-        });
-        
-        // Done typing
-        this.ws.on('done', () => {
-            document.getElementById('typingIndicator').style.display = 'none';
-            this.scrollToBottom();
-        });
-        
-        // Conversations list
-        this.ws.on('conversations', (conversations) => {
-            this.conversations = conversations;
-            this.updateConversationsList();
-        });
-        
-        // Conversation history
-        this.ws.on('history', (history) => {
-            this.loadConversationHistory(history);
-        });
-        
-        // Files list
-        this.ws.on('files', (files) => {
-            this.updateFilesList(files);
-        });
-        
-        // Progress updates
-        this.ws.on('progress', (progressData) => {
-            this.updateProgressTracker(progressData);
-        });
-        
-        // Error messages
-        this.ws.on('error', (message) => {
-            this.showError(message);
-            showToast(message, 'error');
-        });
-        
-        // Reconnect
-        this.ws.on('reconnect', () => {
-            // Request available conversations
-            this.ws.send("/list");
-        });
-    }
-    
-    sendMessage() {
-        const messageInput = document.getElementById('messageInput');
-        const message = messageInput.value.trim();
-        
-        if (!message) return;
-        
-        // Clear input
-        messageInput.value = '';
-        messageInput.style.height = 'auto';
-        
-        // Add message to chat
-        this.addUserMessage(message);
-        
-        // Send via WebSocket
-        if (this.uploadedFiles.length > 0) {
-            // Send message with file references
-            const fileData = {
-                message: message,
-                paths: this.uploadedFiles.map(f => f.path)
-            };
-            this.ws.send(`FILE:${JSON.stringify(fileData)}`);
             
-            // Clear uploaded files
-            this.uploadedFiles = [];
-            document.getElementById('filePreview').innerHTML = '';
-        } else {
-            // Send regular message
-            this.ws.send(message);
-        }
-    }
-    
-    addUserMessage(message) {
-        const messagesContainer = document.getElementById('chatMessages');
-        const messageElement = document.createElement('div');
-        messageElement.className = 'user-message';
-        
-        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        
-        messageElement.innerHTML = `
-            <div class="message-content">${message}</div>
-            <div class="message-time">${time}</div>
-        `;
-        
-        messagesContainer.appendChild(messageElement);
-        this.scrollToBottom();
-    }
-    
-    addBotMessage(message) {
-        const messagesContainer = document.getElementById('chatMessages');
-        const messageElement = document.createElement('div');
-        messageElement.className = 'bot-message';
-        
-        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        
-        // Convert markdown to HTML
-        const htmlContent = marked.parse(message);
-        
-        messageElement.innerHTML = `
-            <div class="message-content">${htmlContent}</div>
-            <div class="message-time">${time}</div>
-        `;
-        
-        // Apply syntax highlighting to code blocks
-        messageElement.querySelectorAll('pre code').forEach((block) => {
-            hljs.highlightElement(block);
+            // Add new line on Enter
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const start = this.messageInput.selectionStart;
+                const end = this.messageInput.selectionEnd;
+                const value = this.messageInput.value;
+                
+                this.messageInput.value = value.substring(0, start) + '\n' + value.substring(end);
+                this.messageInput.selectionStart = this.messageInput.selectionEnd = start + 1;
+                
+                // Trigger auto-resize
+                this.messageInput.style.height = 'auto';
+                this.messageInput.style.height = this.messageInput.scrollHeight + 'px';
+            }
         });
-        
-        messagesContainer.appendChild(messageElement);
-        this.scrollToBottom();
+
+        // Auto-resize textarea
+        this.messageInput.addEventListener('input', () => {
+            this.messageInput.style.height = 'auto';
+            this.messageInput.style.height = this.messageInput.scrollHeight + 'px';
+        });
+
+        // Form submission
+        this.chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = this.messageInput.value.trim();
+            if (!message && this.files.size === 0) return;
+
+            await this.sendMessage(message);
+            this.messageInput.value = '';
+            this.messageInput.style.height = 'auto';
+        });
+
+        // New conversation
+        this.newConversationBtn.addEventListener('click', () => {
+            this.createNewConversation();
+        });
+
+        // Save conversation title
+        this.saveTitleBtn.addEventListener('click', () => {
+            this.saveConversationTitle();
+        });
+
+        // Search conversations
+        this.searchInput.addEventListener('input', (e) => {
+            this.searchConversations(e.target.value);
+        });
     }
-    
-    addThinkingSteps(steps) {
-        const messagesContainer = document.getElementById('chatMessages');
-        const stepsElement = document.createElement('div');
-        stepsElement.className = 'thinking-steps';
+
+    initializeWebSocket() {
+        this.socket = new WebSocket(`ws://${window.location.host}/ws`);
         
-        stepsElement.textContent = steps;
-        
-        messagesContainer.appendChild(stepsElement);
-        this.scrollToBottom();
+        this.socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            this.handleWebSocketMessage(data);
+        };
+
+        this.socket.onclose = () => {
+            console.log('WebSocket connection closed');
+            // Attempt to reconnect after a delay
+            setTimeout(() => this.initializeWebSocket(), 3000);
+        };
     }
-    
-    showError(message) {
-        const messagesContainer = document.getElementById('chatMessages');
-        const errorElement = document.createElement('div');
-        errorElement.className = 'error-message';
-        
-        errorElement.textContent = message;
-        
-        messagesContainer.appendChild(errorElement);
-        this.scrollToBottom();
-    }
-    
-    scrollToBottom() {
-        const messagesContainer = document.getElementById('chatMessages');
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-    
-    updateConversationsList() {
-        const list = document.getElementById('conversationsList');
-        
-        // Show/hide empty state
-        const emptyState = list.querySelector('.conversation-empty-state');
-        if (emptyState) {
-            emptyState.style.display = this.conversations.length === 0 ? 'block' : 'none';
+
+    async sendMessage(message) {
+        if (!this.currentConversationId) {
+            await this.createNewConversation();
         }
+
+        // Add user message to UI
+        this.addMessage('user', message);
+
+        // Prepare files if any
+        const fileData = [];
+        for (const [filename, file] of this.files.entries()) {
+            const base64 = await this.fileToBase64(file);
+            fileData.push({
+                filename,
+                content: base64,
+                type: file.type
+            });
+        }
+
+        // Clear file preview
+        this.files.clear();
+        this.filePreview.innerHTML = '';
+
+        // Send message through WebSocket
+        this.socket.send(JSON.stringify({
+            type: 'message',
+            conversation_id: this.currentConversationId,
+            content: message,
+            files: fileData
+        }));
+
+        // Show thinking indicator
+        this.showThinkingIndicator();
+    }
+
+    handleWebSocketMessage(data) {
+        switch (data.type) {
+            case 'bot_message':
+                this.hideThinkingIndicator();
+                this.addMessage('bot', data.content);
+                break;
+            case 'thinking_steps':
+                this.updateThinkingSteps(data.content);
+                break;
+            case 'progress_update':
+                this.updateProgress(data.content);
+                break;
+            case 'error':
+                this.showError(data.content);
+                break;
+        }
+    }
+
+    addMessage(type, content) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `${type}-message`;
         
-        // Clear existing conversations (except empty state)
-        const existingItems = list.querySelectorAll('.conversation-item');
-        existingItems.forEach(item => item.remove());
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.innerHTML = this.formatMessage(content);
         
-        // Add conversations
-        this.conversations.forEach(conversation => {
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        timeDiv.textContent = new Date().toLocaleTimeString();
+        
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timeDiv);
+        
+        this.chatMessages.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    formatMessage(content) {
+        // Convert markdown to HTML
+        return marked.parse(content);
+    }
+
+    showThinkingIndicator() {
+        const indicator = document.createElement('div');
+        indicator.className = 'thinking-steps';
+        indicator.id = 'thinkingSteps';
+        indicator.textContent = 'Thinking...';
+        this.chatMessages.appendChild(indicator);
+        this.scrollToBottom();
+    }
+
+    hideThinkingIndicator() {
+        const indicator = document.getElementById('thinkingSteps');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+
+    updateThinkingSteps(steps) {
+        const indicator = document.getElementById('thinkingSteps');
+        if (indicator) {
+            indicator.textContent = steps;
+            this.scrollToBottom();
+        }
+    }
+
+    updateProgress(progress) {
+        this.progressItems.innerHTML = '';
+        
+        progress.forEach(item => {
+            const progressItem = document.createElement('div');
+            progressItem.className = 'progress-item';
+            
+            const icon = document.createElement('i');
+            icon.className = item.completed ? 'fas fa-check' : 'fas fa-circle';
+            
+            const text = document.createElement('span');
+            text.textContent = item.description;
+            
+            progressItem.appendChild(icon);
+            progressItem.appendChild(text);
+            this.progressItems.appendChild(progressItem);
+        });
+    }
+
+    showError(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = message;
+        this.chatMessages.appendChild(errorDiv);
+        this.scrollToBottom();
+    }
+
+    scrollToBottom() {
+        this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    }
+
+    async createNewConversation() {
+        const response = await fetch('/api/conversations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            this.currentConversationId = data.id;
+            this.conversationTitle.value = data.title || 'Untitled Conversation';
+            this.loadConversations();
+            this.showToast('New conversation created', 'success');
+        }
+    }
+
+    async loadConversations() {
+        const response = await fetch('/api/conversations');
+        if (response.ok) {
+            const conversations = await response.json();
+            this.renderConversations(conversations);
+        }
+    }
+
+    renderConversations(conversations) {
+        this.conversationsList.innerHTML = '';
+        
+        conversations.forEach(conv => {
             const item = document.createElement('div');
             item.className = 'conversation-item';
-            if (conversation.id === this.currentConversationId) {
+            if (conv.id === this.currentConversationId) {
                 item.classList.add('active');
             }
             
-            // Format date
-            const formattedDate = formatDate(conversation.last_updated);
+            const title = document.createElement('div');
+            title.className = 'conversation-title';
+            title.textContent = conv.title || 'Untitled Conversation';
             
-            item.innerHTML = `
-                <div class="conversation-info">
-                    <div class="conversation-title">${conversation.title}</div>
-                    <div class="conversation-date">${formattedDate}</div>
-                </div>
-            `;
+            const date = document.createElement('div');
+            date.className = 'conversation-date';
+            date.textContent = new Date(conv.created_at).toLocaleDateString();
             
-            // Add click handler to load conversation
-            item.addEventListener('click', () => {
-                this.ws.send(`/load ${conversation.id}`);
-                this.currentConversationId = conversation.id;
-                document.getElementById('conversationTitle').value = conversation.title;
-                this.updateConversationsList(); // Update active state
+            item.appendChild(title);
+            item.appendChild(date);
+            
+            item.addEventListener('click', () => this.loadConversation(conv.id));
+            
+            this.conversationsList.appendChild(item);
+        });
+    }
+
+    async loadConversation(id) {
+        const response = await fetch(`/api/conversations/${id}`);
+        if (response.ok) {
+            const conversation = await response.json();
+            this.currentConversationId = id;
+            this.conversationTitle.value = conversation.title;
+            this.chatMessages.innerHTML = '';
+            conversation.messages.forEach(msg => {
+                this.addMessage(msg.role, msg.content);
             });
-            
-            list.appendChild(item);
-        });
-        
-        // Update conversation title input
-        if (this.currentConversationId) {
-            const currentConv = this.conversations.find(c => c.id === this.currentConversationId);
-            if (currentConv) {
-                document.getElementById('conversationTitle').value = currentConv.title;
-            }
+            this.loadConversations();
         }
     }
-    
-    filterConversations(searchText) {
-        if (!searchText) {
-            // Show all conversations
-            const items = document.querySelectorAll('.conversation-item');
-            items.forEach(item => item.style.display = 'flex');
-            return;
-        }
-        
-        // Filter by title (case insensitive)
-        const search = searchText.toLowerCase();
-        const items = document.querySelectorAll('.conversation-item');
-        
-        items.forEach(item => {
-            const title = item.querySelector('.conversation-title').textContent.toLowerCase();
-            item.style.display = title.includes(search) ? 'flex' : 'none';
+
+    async saveConversationTitle() {
+        if (!this.currentConversationId) return;
+
+        const response = await fetch(`/api/conversations/${this.currentConversationId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                title: this.conversationTitle.value
+            })
         });
-    }
-    
-    loadConversationHistory(history) {
-        // Clear chat messages
-        document.getElementById('chatMessages').innerHTML = '';
-        
-        // Add history messages
-        history.forEach(message => {
-            if (message.role === 'user') {
-                this.addUserMessage(message.content);
-            } else if (message.role === 'assistant') {
-                this.addBotMessage(message.content);
-            } else if (message.role === 'system' && message.content.startsWith('🤔 Thinking Process:')) {
-                this.addThinkingSteps(message.content);
-            }
-        });
-        
-        // Add typing indicator (hidden by default)
-        const typingIndicator = document.createElement('div');
-        typingIndicator.className = 'typing-indicator';
-        typingIndicator.id = 'typingIndicator';
-        typingIndicator.innerHTML = '<span></span><span></span><span></span>';
-        typingIndicator.style.display = 'none';
-        document.getElementById('chatMessages').appendChild(typingIndicator);
-    }
-    
-    handleFileUpload(event) {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
-        
-        const filePreview = document.getElementById('filePreview');
-        const uploadProgress = document.getElementById('uploadProgress');
-        
-        // Show progress bar
-        uploadProgress.style.display = 'block';
-        
-        // Create FormData
-        const formData = new FormData();
-        for (let i = 0; i < files.length; i++) {
-            formData.append('files', files[i]);
+
+        if (response.ok) {
+            this.loadConversations();
+            this.showToast('Conversation title saved', 'success');
         }
-        
-        // Upload files
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/upload/');
-        
-        xhr.upload.onprogress = function(e) {
-            if (e.lengthComputable) {
-                const percentComplete = (e.loaded / e.total) * 100;
-                uploadProgress.querySelector('.progress-bar').style.width = percentComplete + '%';
-            }
-        };
-        
-        xhr.onload = function() {
-            if (xhr.status === 200) {
-                const response = JSON.parse(xhr.responseText);
-                
-                // Add files to preview
-                response.file_paths.forEach((path, index) => {
-                    const file = files[index];
-                    const fileItem = document.createElement('div');
-                    fileItem.className = 'file-item';
-                    
-                    fileItem.innerHTML = `
-                        ${file.name}
-                        <button type="button" class="remove-file" data-path="${path}">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    `;
-                    
-                    const removeBtn = fileItem.querySelector('.remove-file');
-                    removeBtn.addEventListener('click', function() {
-                        this.uploadedFiles = this.uploadedFiles.filter(f => f.path !== path);
-                        fileItem.remove();
-                    }.bind(this));
-                    
-                    filePreview.appendChild(fileItem);
-                    
-                    // Add to uploaded files
-                    this.uploadedFiles.push({
-                        name: file.name,
-                        path: path
-                    });
-                }, this);
-                
-                // Hide progress bar
-                setTimeout(() => {
-                    uploadProgress.style.display = 'none';
-                    uploadProgress.querySelector('.progress-bar').style.width = '0%';
-                }, 500);
+    }
+
+    searchConversations(query) {
+        const items = this.conversationsList.getElementsByClassName('conversation-item');
+        for (const item of items) {
+            const title = item.getElementsByClassName('conversation-title')[0].textContent;
+            if (title.toLowerCase().includes(query.toLowerCase())) {
+                item.style.display = 'flex';
             } else {
-                console.error('Upload failed');
-                uploadProgress.style.display = 'none';
-                showToast('File upload failed', 'error');
+                item.style.display = 'none';
             }
-        }.bind(this);
-        
-        xhr.send(formData);
-    },
-    
-    updateFilesList(files) {
-        const fileList = document.getElementById('fileList');
-        const emptyMessage = document.getElementById('emptyFilesMessage');
-        
-        // Show/hide empty message
-        emptyMessage.style.display = files.length === 0 ? 'block' : 'none';
-        
-        // Clear existing files
-        fileList.innerHTML = '';
-        
-        // Add files
-        files.forEach(file => {
-            const fileItem = document.createElement('div');
-            fileItem.className = 'file-item';
-            
-            // Choose icon based on file type
-            let icon = 'fa-file';
-            if (file.type === 'markdown') icon = 'fa-file-alt';
-            else if (file.type === 'website') icon = 'fa-globe';
-            else if (file.type === 'report') icon = 'fa-chart-bar';
-            else if (file.type === 'document') icon = 'fa-file-pdf';
-            else if (file.type === 'text') icon = 'fa-file-alt';
-            
-            fileItem.innerHTML = `
-                <div class="file-icon">
-                    <i class="fas ${icon}"></i>
-                </div>
-                <div class="file-info">
-                    <div class="file-name">${file.name}</div>
-                    <div class="file-meta">${file.type}</div>
-                </div>
-                <div class="file-actions">
-                    <button class="file-action-btn download-btn" data-path="${file.path}" title="Download">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    <button class="file-action-btn view-btn" data-path="${file.path}" title="View">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                </div>
-            `;
-            
-            // Add event listeners for buttons
-            fileItem.querySelector('.download-btn').addEventListener('click', function() {
-                window.open(`/download/${encodeURIComponent(file.name)}`, '_blank');
-            });
-            
-            fileItem.querySelector('.view-btn').addEventListener('click', function() {
-                if (file.type === 'website') {
-                    window.open(`/view-website/${encodeURIComponent(file.path)}`, '_blank');
-                } else {
-                    window.open(`/download/${encodeURIComponent(file.name)}`, '_blank');
-                }
-            });
-            
-            fileList.appendChild(fileItem);
-        });
+        }
     }
-    
-    updateProgressTracker(progressData) {
-        const progressTracker = document.getElementById('progressTracker');
-        const sections = progressData.sections || [];
-        const currentSection = progressData.current_section;
-        const completedTasks = progressData.completed_tasks || [];
+
+    showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
         
-        // Clear progress tracker
-        progressTracker.innerHTML = '';
+        const content = document.createElement('div');
+        content.className = 'toast-content';
         
-        // Show empty state if no sections
-        if (sections.length === 0) {
-            progressTracker.innerHTML = `
-                <div class="empty-progress-state">
-                    <p>No active project</p>
-                </div>
-            `;
-            return;
-        }
+        const icon = document.createElement('i');
+        icon.className = `fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}`;
         
-        // Add sections
-        sections.forEach(section => {
-            const sectionElement = document.createElement('div');
-            sectionElement.className = 'progress-section';
-            
-            // Determine section status
-            let status = 'incomplete';
-            if (section === currentSection) status = 'in-progress';
-            if (completedTasks.includes(section)) status = 'complete';
-            
-            // Choose icon based on section
-            let icon = 'fa-list-check';
-            if (section.toLowerCase().includes('research')) icon = 'fa-search';
-            else if (section.toLowerCase().includes('analysis')) icon = 'fa-chart-line';
-            else if (section.toLowerCase().includes('document')) icon = 'fa-file-alt';
-            else if (section.toLowerCase().includes('report')) icon = 'fa-file-pdf';
-            
-            sectionElement.innerHTML = `
-                <div class="progress-section-header">
-                    <div class="progress-section-title">
-                        <i class="fas ${icon}"></i>
-                        ${section}
-                    </div>
-                    <div class="progress-section-indicator ${status}">
-                        <i class="fas ${status === 'complete' ? 'fa-check' : status === 'in-progress' ? 'fa-spinner fa-spin' : 'fa-circle'}"></i>
-                    </div>
-                </div>
-            `;
-            
-            progressTracker.appendChild(sectionElement);
+        content.appendChild(icon);
+        content.appendChild(document.createTextNode(message));
+        toast.appendChild(content);
+        
+        this.toastContainer.appendChild(toast);
+        
+        // Trigger reflow
+        toast.offsetHeight;
+        
+        toast.classList.add('show');
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    async fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
         });
-        
-        // Add completed tasks
-        if (completedTasks.length > 0) {
-            const tasksSection = document.createElement('div');
-            tasksSection.className = 'progress-section-tasks';
-            
-            completedTasks.forEach(task => {
-                const taskElement = document.createElement('div');
-                taskElement.className = 'progress-task task-complete';
-                taskElement.innerHTML = `
-                    <i class="fas fa-check-circle"></i>
-                    ${task}
-                `;
-                tasksSection.appendChild(taskElement);
-            });
-            
-            progressTracker.appendChild(tasksSection);
-        }
     }
 }
 
-// Initialize everything when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    // Generate a unique client ID for this session
-    const clientId = 'client_' + Math.random().toString(36).substring(2, 10);
-    
-    // Initialize chat controller
-    const chatController = new ChatUIController(clientId);
+// Initialize the chat UI when the page loads
+document.addEventListener('DOMContentLoaded', () => {
+    window.chatUI = new ChatUIController();
 });
 
 // Add CSS for toasts

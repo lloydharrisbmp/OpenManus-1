@@ -321,8 +321,17 @@ class ConnectionManager:
         # Show typing indicator
         await self.send_message(client_id, "[TYPING]")
         
-        # Process the message
-        response = await agent.process_message(message)
+        # Check if this is a clarification response
+        if message.startswith("Clarification: "):
+            # Extract original message and clarifications
+            original_message = self.conversation_history[client_id][-3]["content"]  # Get the original request
+            clarifications = message[14:]  # Remove "Clarification: " prefix
+            
+            # Process the clarified message
+            response = await agent.process_clarified_message(original_message, clarifications)
+        else:
+            # Process the initial message to get clarification questions
+            response = await agent.process_message(message)
         
         # Extract sections and tasks from the response
         self.extract_sections_and_tasks(client_id, response)
@@ -333,9 +342,6 @@ class ConnectionManager:
             thinking_steps = "\n\n🤔 Thinking Process:\n" + "\n".join(agent.thinking_steps)
             await self.send_message(client_id, thinking_steps)
             agent.thinking_steps = []  # Clear thinking steps after sending
-        
-        # Check for new files
-        await self.check_for_new_files(client_id)
         
         # Send the response
         await self.send_message(client_id, response)

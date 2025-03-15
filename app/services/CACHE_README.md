@@ -247,4 +247,4 @@ Potential improvements for future versions:
 ## Requirements
 
 - Python 3.7+
-- `aiofiles` library (optional, but recommended for async file I/O) 
+- `aiofiles` library (optional, but recommended for async file I/O)
