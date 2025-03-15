@@ -1,12 +1,14 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 import json
 from pathlib import Path
 
 from pydantic import Field, BaseModel
+import asyncio
 
 from app.agent.toolcall import ToolCallAgent
 from app.prompt.financial_planner import NEXT_STEP_TEMPLATE, SYSTEM_PROMPT
+from app.schema import Message
 from app.tool import Bash, StrReplaceEditor, Terminate, ToolCollection
 from app.tool.financial_tools import (
     AustralianMarketAnalysisTool,
@@ -100,8 +102,33 @@ class FinancialPlanningAgent(ToolCallAgent):
         # Store thinking step before executing it
         thinking_step = f"Step {len(self.thinking_steps) + 1}: {self.next_step_prompt}"
         self.thinking_steps.append(thinking_step)
+        
+        # For Gemini models, use a simpler approach without forcing tool calls
+        if self.llm.api_type == "gemini":
+            if self.next_step_prompt:
+                user_msg = Message.user_message(self.next_step_prompt)
+                self.messages += [user_msg]
+                
+            # Get a direct response from Gemini
+            content = await self.llm.ask(
+                messages=self.messages,
+                system_msgs=[Message.system_message(self.system_prompt)]
+                if self.system_prompt
+                else None,
+            )
             
-        return await super().think()
+            # Log response info
+            logger.info(f"✨ {self.name}'s thoughts: {content}")
+            
+            # Create and add assistant message
+            assistant_msg = Message.assistant_message(content)
+            self.memory.add_message(assistant_msg)
+            
+            # No tool calls for Gemini mode, but return True to continue the conversation
+            return True
+        else:
+            # For other models, use the standard tool call approach
+            return await super().think()
         
     async def observe(self, observation: str) -> None:
         """Store the observation for future reference"""

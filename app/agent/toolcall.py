@@ -6,7 +6,7 @@ from pydantic import Field
 from app.agent.react import ReActAgent
 from app.logger import logger
 from app.prompt.toolcall import NEXT_STEP_PROMPT, SYSTEM_PROMPT
-from app.schema import TOOL_CHOICE_TYPE, AgentState, Message, ToolCall, ToolChoice
+from app.schema import TOOL_CHOICE_TYPE, AgentState, Message, ToolCall, ToolChoice, Function
 from app.tool import CreateChatCompletion, Terminate, ToolCollection
 
 
@@ -48,37 +48,98 @@ class ToolCallAgent(ReActAgent):
             tools=self.available_tools.to_params(),
             tool_choice=self.tool_choices,
         )
-        self.tool_calls = response.tool_calls
+        
+        # Handle both object and dictionary responses (for different LLM providers)
+        if isinstance(response, dict):
+            content = response.get('content')
+            raw_tool_calls = response.get('tool_calls', [])
+            # Convert raw dictionary tool calls to ToolCall objects
+            tool_calls = []
+            for call in raw_tool_calls:
+                # Ensure we have the proper structure
+                if isinstance(call, dict) and 'function' in call:
+                    function_data = call['function']
+                    
+                    # Check for valid function name
+                    function_name = function_data.get('name', '')
+                    if not function_name:
+                        logger.warning("Received tool call with empty name, skipping")
+                        continue
+                    
+                    # Handle arguments that might be MapComposite objects
+                    arguments = function_data.get('arguments')
+                    if arguments is None:
+                        json_args = "{}"
+                    elif hasattr(arguments, 'to_dict'):  # Handle MapComposite objects
+                        try:
+                            # Try to convert MapComposite to dictionary
+                            args_dict = arguments.to_dict()
+                            json_args = json.dumps(args_dict)
+                        except Exception as e:
+                            logger.warning(f"Error converting arguments to JSON: {e}")
+                            json_args = "{}"
+                    elif not isinstance(arguments, str):
+                        # Try to convert non-string arguments to JSON
+                        try:
+                            json_args = json.dumps(arguments)
+                        except Exception as e:
+                            logger.warning(f"Error converting arguments to JSON: {e}")
+                            json_args = "{}"
+                    else:
+                        json_args = arguments
+                    
+                    # Create valid function object
+                    function = Function(
+                        name=function_name,
+                        arguments=json_args
+                    )
+                    
+                    tool_calls.append(ToolCall(
+                        id=call.get('id', f"call_{len(tool_calls)}"),
+                        type=call.get('type', 'function'),
+                        function=function
+                    ))
+        else:
+            content = response.content
+            tool_calls = response.tool_calls if hasattr(response, 'tool_calls') else []
+            
+        self.tool_calls = tool_calls
 
         # Log response info
-        logger.info(f"✨ {self.name}'s thoughts: {response.content}")
+        logger.info(f"✨ {self.name}'s thoughts: {content}")
         logger.info(
-            f"🛠️ {self.name} selected {len(response.tool_calls) if response.tool_calls else 0} tools to use"
+            f"🛠️ {self.name} selected {len(tool_calls) if tool_calls else 0} tools to use"
         )
-        if response.tool_calls:
-            logger.info(
-                f"🧰 Tools being prepared: {[call.function.name for call in response.tool_calls]}"
-            )
+        if tool_calls:
+            tool_names = []
+            for call in tool_calls:
+                # Safely access function name
+                if hasattr(call, 'function') and hasattr(call.function, 'name'):
+                    tool_names.append(call.function.name)
+                elif isinstance(call, dict) and 'function' in call and 'name' in call['function']:
+                    tool_names.append(call['function']['name'])
+            if tool_names:
+                logger.info(f"🧰 Tools being prepared: {tool_names}")
 
         try:
             # Handle different tool_choices modes
             if self.tool_choices == ToolChoice.NONE:
-                if response.tool_calls:
+                if tool_calls:
                     logger.warning(
                         f"🤔 Hmm, {self.name} tried to use tools when they weren't available!"
                     )
-                if response.content:
-                    self.memory.add_message(Message.assistant_message(response.content))
+                if content:
+                    self.memory.add_message(Message.assistant_message(content))
                     return True
                 return False
 
             # Create and add assistant message
             assistant_msg = (
                 Message.from_tool_calls(
-                    content=response.content, tool_calls=self.tool_calls
+                    content=content, tool_calls=self.tool_calls
                 )
                 if self.tool_calls
-                else Message.assistant_message(response.content)
+                else Message.assistant_message(content)
             )
             self.memory.add_message(assistant_msg)
 
@@ -87,7 +148,7 @@ class ToolCallAgent(ReActAgent):
 
             # For 'auto' mode, continue with content if no commands but content exists
             if self.tool_choices == ToolChoice.AUTO and not self.tool_calls:
-                return bool(response.content)
+                return bool(content)
 
             return bool(self.tool_calls)
         except Exception as e:
@@ -130,16 +191,26 @@ class ToolCallAgent(ReActAgent):
 
     async def execute_tool(self, command: ToolCall) -> str:
         """Execute a single tool call with robust error handling"""
-        if not command or not command.function or not command.function.name:
+        if not command or not command.function:
             return "Error: Invalid command format"
-
+        
         name = command.function.name
+        if not name:
+            logger.error("Received tool call with empty name")
+            return "Error: Tool name cannot be empty"
+            
         if name not in self.available_tools.tool_map:
             return f"Error: Unknown tool '{name}'"
 
         try:
             # Parse arguments
-            args = json.loads(command.function.arguments or "{}")
+            try:
+                args = json.loads(command.function.arguments or "{}")
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"📝 Invalid JSON format for '{name}' arguments: {command.function.arguments}"
+                )
+                return f"Error: Invalid arguments format for {name}: {str(e)}"
 
             # Execute the tool
             logger.info(f"🔧 Activating tool: '{name}'...")

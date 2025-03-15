@@ -66,7 +66,14 @@ class LLM:
             if self.api_type == "gemini":
                 if genai is None:
                     raise ImportError("Please install google-generativeai package: pip install google-generativeai")
+                
+                # Configure Gemini with API key
+                if not self.api_key:
+                    raise ValueError("API key is required for Gemini models")
+                
+                # Configure Gemini
                 genai.configure(api_key=self.api_key)
+                
                 self.client = genai.GenerativeModel(self.model)
                 # Determine model type if not explicitly set
                 if not self.model_type:
@@ -344,67 +351,143 @@ class LLM:
             
             # Handle Gemini models for tool calls
             if self.api_type == "gemini":
-                # Convert OpenAI tool format to Gemini function format if needed
-                gemini_tools = []
-                if tools:
-                    for tool in tools:
-                        if tool["type"] == "function":
-                            gemini_tools.append({
-                                "name": tool["function"]["name"],
-                                "description": tool["function"].get("description", ""),
-                                "parameters": tool["function"].get("parameters", {})
-                            })
-                
-                # Convert messages to Gemini format
-                gemini_messages = []
-                for msg in messages:
-                    role = "user" if msg["role"] == "user" else "model"
-                    content = msg.get("content", "")
-                    gemini_messages.append({"role": role, "parts": [content]})
-                
-                # Set up function calling
-                if gemini_tools and self.model_type in ["pro", "flash-thinking"]:
-                    chat = self.client.start_chat(history=gemini_messages[:-1])
-                    response = await chat.send_message_async(
-                        gemini_messages[-1]["parts"][0],
-                        tools=gemini_tools,
-                        generation_config={
-                            "temperature": temperature or self.temperature,
-                            "max_output_tokens": self.max_tokens,
-                        }
-                    )
+                try:
+                    # Convert OpenAI tool format to Gemini function format
+                    gemini_tools = []
+                    if tools:
+                        for tool in tools:
+                            if tool.get("type") == "function":
+                                function_def = tool["function"]
+                                
+                                def process_properties(props):
+                                    """Helper function to process parameter properties recursively"""
+                                    processed = {}
+                                    for name, value in props.items():
+                                        if value.get("type") == "object":
+                                            if "properties" in value and value["properties"]:
+                                                processed[name] = {
+                                                    "type": "OBJECT",
+                                                    "properties": process_properties(value["properties"])
+                                                }
+                                            else:
+                                                # For empty object properties, provide a minimal valid structure
+                                                processed[name] = {
+                                                    "type": "STRING",
+                                                    "description": value.get("description", "Object value")
+                                                }
+                                        elif value.get("type") == "array" and "items" in value:
+                                            if value["items"].get("type") == "object" and "properties" in value["items"]:
+                                                processed[name] = {
+                                                    "type": "ARRAY",
+                                                    "items": {
+                                                        "type": "OBJECT",
+                                                        "properties": process_properties(value["items"]["properties"])
+                                                    }
+                                                }
+                                            else:
+                                                processed[name] = {
+                                                    "type": "ARRAY",
+                                                    "items": {
+                                                        "type": value["items"].get("type", "STRING").upper()
+                                                    }
+                                                }
+                                        else:
+                                            processed[name] = {
+                                                "type": value.get("type", "STRING").upper(),
+                                                "description": value.get("description", "")
+                                            }
+                                    return processed
+                                
+                                # Create tool definition with processed parameters
+                                tool_def = {
+                                    "function_declarations": [{
+                                        "name": function_def["name"],
+                                        "description": function_def.get("description", ""),
+                                        "parameters": {
+                                            "type": "OBJECT",
+                                            "properties": process_properties(
+                                                function_def.get("parameters", {}).get("properties", {})
+                                            )
+                                        }
+                                    }]
+                                }
+                                
+                                gemini_tools.append(tool_def)
                     
-                    # Convert Gemini response to OpenAI-like format
-                    if response.candidates and response.candidates[0].content.parts:
-                        function_calls = []
-                        for part in response.candidates[0].content.parts:
-                            if hasattr(part, 'function_call'):
-                                function_calls.append({
-                                    "id": f"call_{len(function_calls)}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": part.function_call.name,
-                                        "arguments": part.function_call.args
-                                    }
-                                })
+                    # Convert messages to Gemini format
+                    gemini_messages = []
+                    for msg in messages:
+                        role = "user" if msg["role"] == "user" else "model"
+                        content = msg.get("content", "")
+                        gemini_messages.append({"role": role, "parts": [content]})
+                    
+                    # Set up function calling
+                    if gemini_tools and self.model_type in ["pro", "flash-thinking"]:
+                        logger.info(f"Using Gemini model {self.model} with {len(gemini_tools)} tools")
+                        chat = self.client.start_chat(history=gemini_messages[:-1])
+                        response = await chat.send_message_async(
+                            gemini_messages[-1]["parts"][0],
+                            tools=gemini_tools,
+                            generation_config={
+                                "temperature": temperature or self.temperature,
+                                "max_output_tokens": self.max_tokens,
+                            }
+                        )
                         
-                        return {
-                            "role": "assistant",
-                            "content": response.text if not function_calls else None,
-                            "tool_calls": function_calls if function_calls else None
-                        }
-                    return {"role": "assistant", "content": response.text}
-                else:
-                    # Fall back to regular response if tools not supported
-                    chat = self.client.start_chat(history=gemini_messages[:-1])
-                    response = await chat.send_message_async(
-                        gemini_messages[-1]["parts"][0],
-                        generation_config={
-                            "temperature": temperature or self.temperature,
-                            "max_output_tokens": self.max_tokens,
-                        }
-                    )
-                    return {"role": "assistant", "content": response.text}
+                        # Convert Gemini response to OpenAI-like format
+                        if response.candidates and response.candidates[0].content.parts:
+                            function_calls = []
+                            for part in response.candidates[0].content.parts:
+                                if hasattr(part, 'function_call'):
+                                    try:
+                                        # Extract function call data
+                                        function_name = part.function_call.name or ""
+                                        
+                                        # Handle arguments that might come as objects or strings
+                                        if hasattr(part.function_call, 'args'):
+                                            if hasattr(part.function_call.args, 'to_dict'):
+                                                # MapComposite object
+                                                args = part.function_call.args.to_dict()
+                                            else:
+                                                # Regular object or string
+                                                args = part.function_call.args
+                                        else:
+                                            args = {}
+                                            
+                                        function_calls.append({
+                                            "id": f"call_{len(function_calls)}",
+                                            "type": "function",
+                                            "function": {
+                                                "name": function_name,
+                                                "arguments": args
+                                            }
+                                        })
+                                    except Exception as e:
+                                        logger.error(f"Error extracting function call: {e}")
+                            
+                            return {
+                                "role": "assistant",
+                                "content": response.text if not function_calls else None,
+                                "tool_calls": function_calls if function_calls else None
+                            }
+                        return {"role": "assistant", "content": response.text}
+                    else:
+                        # Fall back to regular response if tools not supported
+                        logger.info(f"Using Gemini model {self.model} without tools")
+                        chat = self.client.start_chat(history=gemini_messages[:-1])
+                        response = await chat.send_message_async(
+                            gemini_messages[-1]["parts"][0],
+                            generation_config={
+                                "temperature": temperature or self.temperature,
+                                "max_output_tokens": self.max_tokens,
+                            }
+                        )
+                        return {"role": "assistant", "content": response.text}
+                except Exception as e:
+                    logger.error(f"Gemini API error: {str(e)}")
+                    logger.error(f"Error type: {type(e)}")
+                    logger.error(f"Error details: {repr(e)}")
+                    raise
             
             # Handle Groq models
             elif self.api_type == "groq":
