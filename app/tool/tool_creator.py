@@ -75,6 +75,7 @@ class ToolCreatorTool(BaseTool):
     tool_metrics: Dict[str, ToolUsageMetrics] = Field(default_factory=dict)
     tool_analytics: ToolAnalytics = Field(default_factory=ToolAnalytics)
     metrics_file: Path = Field(default_factory=lambda: Path(__file__).parent / "tool_metrics.json")
+    jinja_env: Environment = Field(default=None)
     
     def __init__(self):
         super().__init__()

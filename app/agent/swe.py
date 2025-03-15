@@ -51,21 +51,6 @@ class FinancialPlanningAgent(ToolCallAgent):
     current_section: Optional[str] = None
     completed_tasks: List[str] = Field(default_factory=list)
 
-    available_tools: ToolCollection = ToolCollection(
-        AustralianMarketAnalysisTool(),
-        MarketAnalysisTool(),  # Keep for international markets
-        PortfolioOptimizationTool(),
-        TaxOptimizationTool(),
-        ReportGeneratorTool(),
-        DocumentAnalyzerTool(),
-        WebsiteGeneratorTool(),
-        ToolCreatorTool(),
-        Bash(),
-        StrReplaceEditor(),
-        Terminate()
-    )
-    special_tool_names: List[str] = Field(default_factory=lambda: [Terminate().name])
-
     max_steps: int = 30  # Increased to handle complex financial analysis tasks
 
     bash: Bash = Field(default_factory=Bash)
@@ -75,10 +60,25 @@ class FinancialPlanningAgent(ToolCallAgent):
     execution_history: List[ToolExecutionMetrics] = Field(default_factory=list)
     visualization_paths: List[str] = Field(default_factory=list)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        # Initialize tools first
+        tools = [
+            AustralianMarketAnalysisTool(),
+            MarketAnalysisTool(),  # Keep for international markets
+            PortfolioOptimizationTool(),
+            TaxOptimizationTool(),
+            ReportGeneratorTool(),
+            DocumentAnalyzerTool(),
+            WebsiteGeneratorTool(),
+            ToolCreatorTool(),
+            Bash(),
+            StrReplaceEditor(),
+            Terminate()
+        ]
+        kwargs['available_tools'] = ToolCollection(*tools)
+        super().__init__(**kwargs)
         self.tool_creator = next(
-            (tool for tool in self.available_tools if isinstance(tool, ToolCreatorTool)),
+            (tool for tool in tools if isinstance(tool, ToolCreatorTool)),
             None
         )
 

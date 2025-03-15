@@ -1,0 +1,87 @@
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+from typing import Dict, Any, List, Optional, Tuple
+from pydantic import Field
+
+from app.tool.base import BaseTool
+
+class {{ ToolName }}(BaseTool):
+    """
+    Tool for {{ tool_description }} with visualization capabilities
+    """
+    
+    name: str = "{{ tool_name }}"
+    description: str = "{{ tool_description }}"
+    parameters: dict = {{ parameters }}
+    
+    # Visualization settings
+    plt_style: str = Field(default="seaborn")
+    figure_size: Tuple[int, int] = Field(default=(10, 6))
+    output_dir: str = Field(default="client_documents/visualizations")
+    
+    def setup_visualization(self):
+        """Configure visualization settings."""
+        plt.style.use(self.plt_style)
+        plt.figure(figsize=self.figure_size)
+        # Ensure output directory exists
+        os.makedirs(self.output_dir, exist_ok=True)
+    
+    def save_visualization(self, filename: str = None):
+        """Save current visualization to file."""
+        if filename is None:
+            filename = f"{self.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        
+        output_path = os.path.join(self.output_dir, filename)
+        plt.savefig(output_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        return output_path
+    
+    def _update_progress(self, message: str, percentage: float):
+        """Update progress for long-running operations."""
+        # This method can be overridden to report progress
+        pass
+    
+    async def execute(
+        self,
+        {{ parameters_args }}
+    ) -> Dict[str, Any]:
+        """
+        Execute the tool with visualization capabilities.
+        """
+        try:
+            # Report progress
+            self._update_progress("Setting up visualization", 0.1)
+            self.setup_visualization()
+            
+            # Tool-specific visualization implementation
+            {{ tool_implementation | indent(12) }}
+            
+            # Save the visualization
+            self._update_progress("Saving visualization", 0.9)
+            output_path = self.save_visualization()
+            
+            self._update_progress("Execution completed", 1.0)
+            return {
+                "status": "success",
+                "message": "Visualization generated successfully",
+                "visualization_path": output_path
+            }
+        except ValueError as e:
+            # Handle value errors
+            return {
+                "status": "error",
+                "message": f"Invalid value: {str(e)}"
+            }
+        except IOError as e:
+            # Handle I/O errors
+            return {
+                "status": "error",
+                "message": f"I/O error: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Error: {str(e)}"
+            }

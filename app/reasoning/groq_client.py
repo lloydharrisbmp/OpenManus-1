@@ -19,11 +19,14 @@ class GroqReasoner:
             api_key (Optional[str]): Groq API key. If None, tries to get from environment.
         """
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
-        if not self.api_key:
-            raise ValueError("Groq API key must be provided or set in GROQ_API_KEY environment variable")
-        
-        self.client = Groq(api_key=self.api_key)
+        self.client = None
         self.model = "qwen-qwq-32b"
+        
+        if self.api_key:
+            try:
+                self.client = Groq(api_key=self.api_key)
+            except Exception as e:
+                logger.warning(f"Failed to initialize Groq client: {e}")
 
     async def reason(self, 
                     context: Dict[str, Any],
@@ -31,18 +34,17 @@ class GroqReasoner:
                     query: str) -> Dict[str, Any]:
         """
         Use the Groq model to reason about the next actions to take.
-        
-        Args:
-            context (Dict[str, Any]): Current context including state and history
-            available_tools (List[Dict[str, Any]]): List of available tools and their descriptions
-            query (str): The current query or situation to reason about
-            
-        Returns:
-            Dict[str, Any]: Reasoning results including:
-                - next_actions: List of recommended actions
-                - explanations: Reasoning behind each action
-                - tool_calls: Specific tools to use and their parameters
+        Falls back to a simple response if Groq is not available.
         """
+        if not self.client:
+            # Fallback response when Groq is not available
+            return {
+                "analysis": "Groq reasoning is not available. Proceeding with basic execution.",
+                "next_actions": ["Execute tools sequentially"],
+                "tool_calls": [],
+                "explanations": ["No Groq API key provided. Using fallback logic."]
+            }
+            
         try:
             # Construct the prompt
             tools_desc = "\n".join([
@@ -93,14 +95,17 @@ Provide your reasoning and recommended actions in JSON format including:
                                    task: str) -> Dict[str, Any]:
         """
         Plan parallel tool execution for complex tasks.
-        
-        Args:
-            tools (List[Dict[str, Any]]): Available tools
-            task (str): Task to plan for
-            
-        Returns:
-            Dict[str, Any]: Parallel execution plan
+        Falls back to sequential execution if Groq is not available.
         """
+        if not self.client:
+            # Fallback to sequential execution plan
+            return {
+                "tool_calls": [{"tool": tool["name"], "parameters": {}} for tool in tools],
+                "dependencies": {},
+                "parallel_groups": [[tool["name"]] for tool in tools],
+                "error_handling": {"strategy": "continue-on-error"}
+            }
+            
         try:
             prompt = f"""Given these tools and this task, create a parallel execution plan:
 

@@ -1,0 +1,103 @@
+import os
+import pandas as pd
+import numpy as np
+from typing import Dict, Any, List, Optional
+from pydantic import Field
+from datetime import datetime
+
+from app.tool.base import BaseTool
+
+class {{ ToolName }}(BaseTool):
+    """
+    Tool for {{ tool_description }} with analytics capabilities
+    """
+    
+    name: str = "{{ tool_name }}"
+    description: str = "{{ tool_description }}"
+    parameters: dict = {{ parameters }}
+    
+    # Analytics settings
+    analysis_methods: List[str] = Field(default_factory=lambda: ["basic", "advanced"])
+    output_dir: str = Field(default="client_documents/analytics")
+    
+    def perform_analysis(self, data: Any) -> Dict[str, Any]:
+        """Perform comprehensive data analysis."""
+        results = {}
+        
+        if "basic" in self.analysis_methods:
+            results["basic"] = self._basic_analysis(data)
+        if "advanced" in self.analysis_methods:
+            results["advanced"] = self._advanced_analysis(data)
+            
+        return results
+    
+    def _basic_analysis(self, data: Any) -> Dict[str, Any]:
+        """Perform basic statistical analysis."""
+        # Basic analysis implementation
+        if isinstance(data, pd.DataFrame):
+            return {
+                "summary": data.describe().to_dict(),
+                "missing_values": data.isnull().sum().to_dict(),
+                "column_types": {col: str(dtype) for col, dtype in data.dtypes.items()}
+            }
+        return {"message": "Basic analysis requires pandas DataFrame"}
+    
+    def _advanced_analysis(self, data: Any) -> Dict[str, Any]:
+        """Perform advanced statistical analysis."""
+        # Advanced analysis implementation
+        if isinstance(data, pd.DataFrame):
+            numeric_cols = data.select_dtypes(include=['number']).columns
+            results = {}
+            
+            if len(numeric_cols) > 1:
+                # Correlation analysis
+                results["correlation"] = data[numeric_cols].corr().to_dict()
+                
+            return results
+        return {"message": "Advanced analysis requires pandas DataFrame"}
+    
+    def _update_progress(self, message: str, percentage: float):
+        """Update progress for long-running operations."""
+        # This method can be overridden to report progress
+        pass
+    
+    async def execute(
+        self,
+        {{ parameters_args }}
+    ) -> Dict[str, Any]:
+        """
+        Execute the tool with analytics capabilities.
+        """
+        try:
+            # Ensure output directory exists
+            os.makedirs(self.output_dir, exist_ok=True)
+            
+            # Report progress
+            self._update_progress("Starting analysis", 0.1)
+            
+            # Tool-specific analytics implementation
+            {{ tool_implementation | indent(12) }}
+            
+            self._update_progress("Execution completed", 1.0)
+            return {
+                "status": "success",
+                "message": "Analysis completed successfully",
+                "results": results
+            }
+        except ValueError as e:
+            # Handle value errors
+            return {
+                "status": "error",
+                "message": f"Invalid value: {str(e)}"
+            }
+        except IOError as e:
+            # Handle I/O errors
+            return {
+                "status": "error",
+                "message": f"I/O error: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Error: {str(e)}"
+            }
