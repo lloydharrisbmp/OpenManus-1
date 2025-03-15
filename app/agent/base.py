@@ -49,7 +49,8 @@ class BaseAgent(BaseModel, ABC):
     def initialize_agent(self) -> "BaseAgent":
         """Initialize agent with default settings if not provided."""
         if self.llm is None or not isinstance(self.llm, LLM):
-            self.llm = LLM(config_name=self.name.lower())
+            config_name = str(self.name).lower() if self.name else "default"
+            self.llm = LLM(config_name=config_name)
         if not isinstance(self.memory, Memory):
             self.memory = Memory()
         return self

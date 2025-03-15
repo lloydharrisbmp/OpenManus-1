@@ -16,7 +16,7 @@ import seaborn as sns
 
 from app.tool.base import BaseTool
 from app.tool.str_replace_editor import StrReplaceEditor
-from app.tool.bash import Bash
+from app.tool.bash import BashTool
 from app.logger import logger
 
 class ToolUsageMetrics(BaseModel):
@@ -69,7 +69,7 @@ class ToolCreatorTool(BaseTool):
     
     tool_templates_dir: Path = Field(default_factory=lambda: Path(__file__).parent / "tool_templates")
     editor: StrReplaceEditor = Field(default_factory=StrReplaceEditor)
-    bash: Bash = Field(default_factory=Bash)
+    bash: BashTool = Field(default_factory=BashTool)
     
     # New fields for enhanced functionality
     tool_metrics: Dict[str, ToolUsageMetrics] = Field(default_factory=dict)

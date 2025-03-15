@@ -9,7 +9,7 @@ class ToolCollection:
     """A collection of defined tools."""
 
     def __init__(self, *tools: BaseTool):
-        self.tools = tools
+        self.tools = list(tools)
         self.tool_map = {tool.name: tool for tool in tools}
 
     def __iter__(self):
@@ -28,7 +28,7 @@ class ToolCollection:
             result = await tool(**tool_input)
             return result
         except ToolError as e:
-            return ToolFailure(error=e.message)
+            return ToolFailure(error=str(e))
 
     async def execute_all(self) -> List[ToolResult]:
         """Execute all tools in the collection sequentially."""
@@ -38,18 +38,18 @@ class ToolCollection:
                 result = await tool()
                 results.append(result)
             except ToolError as e:
-                results.append(ToolFailure(error=e.message))
+                results.append(ToolFailure(error=str(e)))
         return results
 
     def get_tool(self, name: str) -> BaseTool:
         return self.tool_map.get(name)
 
     def add_tool(self, tool: BaseTool):
-        self.tools += (tool,)
+        """Add a tool to the collection."""
+        self.tools.append(tool)
         self.tool_map[tool.name] = tool
-        return self
 
     def add_tools(self, *tools: BaseTool):
+        """Add multiple tools to the collection."""
         for tool in tools:
             self.add_tool(tool)
-        return self

@@ -72,10 +72,14 @@ class PlanningFlow(BaseFlow):
                 await self._create_initial_plan(input_text)
 
                 # Verify plan was created successfully
-                if self.active_plan_id not in self.planning_tool.plans:
-                    logger.error(
-                        f"Plan creation failed. Plan ID {self.active_plan_id} not found in planning tool."
-                    )
+                if hasattr(self.planning_tool, 'plans') and isinstance(self.planning_tool.plans, dict):
+                    if self.active_plan_id not in self.planning_tool.plans:
+                        logger.error(
+                            f"Plan creation failed. Plan ID {self.active_plan_id} not found in planning tool."
+                        )
+                        return f"Failed to create plan for: {input_text}"
+                else:
+                    logger.error("Planning tool has no plans attribute or it's not a dictionary")
                     return f"Failed to create plan for: {input_text}"
 
             result = ""
@@ -120,47 +124,31 @@ class PlanningFlow(BaseFlow):
         )
 
         # Call LLM with PlanningTool
-        response = await self.llm.ask_tool(
-            messages=[user_message],
-            system_msgs=[system_message],
-            tools=[self.planning_tool.to_param()],
-            tool_choice=ToolChoice.REQUIRED,
-        )
-
-        # Process tool calls if present
-        if response.tool_calls:
-            for tool_call in response.tool_calls:
-                if tool_call.function.name == "planning":
-                    # Parse the arguments
-                    args = tool_call.function.arguments
-                    if isinstance(args, str):
-                        try:
-                            args = json.loads(args)
-                        except json.JSONDecodeError:
-                            logger.error(f"Failed to parse tool arguments: {args}")
-                            continue
-
-                    # Ensure plan_id is set correctly and execute the tool
-                    args["plan_id"] = self.active_plan_id
-
-                    # Execute the tool via ToolCollection instead of directly
-                    result = await self.planning_tool.execute(**args)
-
-                    logger.info(f"Plan creation result: {str(result)}")
+        if hasattr(self.llm, 'ask_tool') and callable(self.llm.ask_tool):
+            tool_param = None
+            if hasattr(self.planning_tool, 'to_param') and callable(self.planning_tool.to_param):
+                tool_param = self.planning_tool.to_param()
+            else:
+                logger.error("Planning tool doesn't have a valid to_param method")
+                return
+                
+            if tool_param:
+                try:
+                    response = await self.llm.ask_tool(
+                        messages=[user_message],
+                        system_msgs=[system_message],
+                        tools=[tool_param],
+                        tool_choice=ToolChoice.AUTO,
+                    )
+                except Exception as e:
+                    logger.error(f"Error calling LLM to create plan: {e}")
                     return
-
-        # If execution reached here, create a default plan
-        logger.warning("Creating default plan")
-
-        # Create default plan using the ToolCollection
-        await self.planning_tool.execute(
-            **{
-                "command": "create",
-                "plan_id": self.active_plan_id,
-                "title": f"Plan for: {request[:50]}{'...' if len(request) > 50 else ''}",
-                "steps": ["Analyze request", "Execute task", "Verify results"],
-            }
-        )
+            else:
+                logger.error("Failed to get tool parameters")
+                return
+        else:
+            logger.error("LLM doesn't have a valid ask_tool method")
+            return
 
     async def _get_current_step_info(self) -> tuple[Optional[int], Optional[dict]]:
         """
@@ -227,133 +215,133 @@ class PlanningFlow(BaseFlow):
             return None, None
 
     async def _execute_step(self, executor: BaseAgent, step_info: dict) -> str:
-        """Execute the current step with the specified agent using agent.run()."""
-        # Prepare context for the agent with current plan status
-        plan_status = await self._get_plan_text()
-        step_text = step_info.get("text", f"Step {self.current_step_index}")
+        """Execute a single step using the appropriate agent."""
+        if not executor or not step_info:
+            return "No executor or step information available"
 
-        # Create a prompt for the agent to execute the current step
-        step_prompt = f"""
-        CURRENT PLAN STATUS:
-        {plan_status}
+        # Set the prompt to include step details
+        step_prompt = (
+            f"Execute this specific step in the plan: {step_info.get('description', '')}\n"
+            f"Remember to focus only on this step, not the entire plan. "
+            f"Use the available tools to accomplish the task."
+        )
 
-        YOUR CURRENT TASK:
-        You are now working on step {self.current_step_index}: "{step_text}"
-
-        Please execute this step using the appropriate tools. When you're done, provide a summary of what you accomplished.
-        """
-
-        # Use agent.run() to execute the step
-        try:
-            step_result = await executor.run(step_prompt)
-
-            # Mark the step as completed after successful execution
-            await self._mark_step_completed()
-
-            return step_result
-        except Exception as e:
-            logger.error(f"Error executing step {self.current_step_index}: {e}")
-            return f"Error executing step {self.current_step_index}: {str(e)}"
+        # Call the executor agent
+        if hasattr(executor, 'execute') and callable(executor.execute):
+            try:
+                result = await executor.execute(step_prompt)
+                return result
+            except Exception as e:
+                logger.error(f"Error executing step: {e}")
+                return f"Error executing step: {str(e)}"
+        else:
+            return "Executor agent doesn't have a valid execute method"
 
     async def _mark_step_completed(self) -> None:
-        """Mark the current step as completed."""
-        if self.current_step_index is None:
+        """Mark the current step as completed in the plan."""
+        if self.current_step_index is None or not self.active_plan_id:
             return
 
-        try:
-            # Mark the step as completed
-            await self.planning_tool.execute(
-                command="mark_step",
-                plan_id=self.active_plan_id,
-                step_index=self.current_step_index,
-                step_status=PlanStepStatus.COMPLETED.value,
-            )
-            logger.info(
-                f"Marked step {self.current_step_index} as completed in plan {self.active_plan_id}"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to update plan status: {e}")
-            # Update step status directly in planning tool storage
-            if self.active_plan_id in self.planning_tool.plans:
-                plan_data = self.planning_tool.plans[self.active_plan_id]
-                step_statuses = plan_data.get("step_statuses", [])
-
-                # Ensure the step_statuses list is long enough
-                while len(step_statuses) <= self.current_step_index:
-                    step_statuses.append(PlanStepStatus.NOT_STARTED.value)
-
-                # Update the status
-                step_statuses[self.current_step_index] = PlanStepStatus.COMPLETED.value
-                plan_data["step_statuses"] = step_statuses
+        if hasattr(self.planning_tool, 'execute') and callable(self.planning_tool.execute):
+            try:
+                await self.planning_tool.execute(
+                    command="mark_step",
+                    plan_id=self.active_plan_id,
+                    step_index=self.current_step_index,
+                    step_status="completed",
+                )
+                logger.info(
+                    f"Marked step {self.current_step_index} in plan {self.active_plan_id} as completed"
+                )
+            except Exception as e:
+                logger.error(f"Error marking step as completed: {e}")
+        else:
+            logger.error("Planning tool doesn't have a valid execute method")
 
     async def _get_plan_text(self) -> str:
-        """Get the current plan as formatted text."""
-        try:
-            result = await self.planning_tool.execute(
-                command="get", plan_id=self.active_plan_id
-            )
-            return result.output if hasattr(result, "output") else str(result)
-        except Exception as e:
-            logger.error(f"Error getting plan: {e}")
-            return self._generate_plan_text_from_storage()
+        """Get the current plan as text."""
+        if not self.active_plan_id:
+            return "No active plan"
+
+        # Try to get plan from planning tool
+        if hasattr(self.planning_tool, 'execute') and callable(self.planning_tool.execute):
+            try:
+                result = await self.planning_tool.execute(
+                    command="get",
+                    plan_id=self.active_plan_id,
+                )
+                if isinstance(result, dict) and "plan" in result:
+                    return result["plan"]
+                elif hasattr(result, "output"):
+                    return result.output
+                else:
+                    return str(result)
+            except Exception as e:
+                logger.error(f"Error getting plan from planning tool: {e}")
+
+        # Fall back to generating plan text from stored plan
+        return self._generate_plan_text_from_storage()
 
     def _generate_plan_text_from_storage(self) -> str:
-        """Generate plan text directly from storage if the planning tool fails."""
-        try:
-            if self.active_plan_id not in self.planning_tool.plans:
-                return f"Error: Plan with ID {self.active_plan_id} not found"
+        """Generate a text representation of the plan from internal storage."""
+        if not self.active_plan_id:
+            return "No active plan"
 
-            plan_data = self.planning_tool.plans[self.active_plan_id]
-            title = plan_data.get("title", "Untitled Plan")
-            steps = plan_data.get("steps", [])
-            step_statuses = plan_data.get("step_statuses", [])
-            step_notes = plan_data.get("step_notes", [])
+        # Check if planning tool has plans attribute and it has our plan
+        if not hasattr(self.planning_tool, 'plans') or not isinstance(self.planning_tool.plans, dict):
+            return "Planning tool has no valid plans storage"
 
-            # Ensure step_statuses and step_notes match the number of steps
-            while len(step_statuses) < len(steps):
-                step_statuses.append(PlanStepStatus.NOT_STARTED.value)
-            while len(step_notes) < len(steps):
-                step_notes.append("")
+        plan_data = self.planning_tool.plans.get(self.active_plan_id)
+        if not plan_data:
+            return f"Plan with ID {self.active_plan_id} not found"
 
-            # Count steps by status
-            status_counts = {status: 0 for status in PlanStepStatus.get_all_statuses()}
+        title = plan_data.get("title", "Untitled Plan")
+        steps = plan_data.get("steps", [])
+        step_statuses = plan_data.get("step_statuses", [])
+        step_notes = plan_data.get("step_notes", [])
 
-            for status in step_statuses:
-                if status in status_counts:
-                    status_counts[status] += 1
+        # Ensure step_statuses and step_notes match the number of steps
+        while len(step_statuses) < len(steps):
+            step_statuses.append(PlanStepStatus.NOT_STARTED.value)
+        while len(step_notes) < len(steps):
+            step_notes.append("")
 
-            completed = status_counts[PlanStepStatus.COMPLETED.value]
-            total = len(steps)
-            progress = (completed / total) * 100 if total > 0 else 0
+        # Count steps by status
+        status_counts = {status: 0 for status in PlanStepStatus.get_all_statuses()}
 
-            plan_text = f"Plan: {title} (ID: {self.active_plan_id})\n"
-            plan_text += "=" * len(plan_text) + "\n\n"
+        for status in step_statuses:
+            if status in status_counts:
+                status_counts[status] += 1
 
-            plan_text += (
-                f"Progress: {completed}/{total} steps completed ({progress:.1f}%)\n"
+        completed = status_counts[PlanStepStatus.COMPLETED.value]
+        total = len(steps)
+        progress = (completed / total) * 100 if total > 0 else 0
+
+        plan_text = f"Plan: {title} (ID: {self.active_plan_id})\n"
+        plan_text += "=" * len(plan_text) + "\n\n"
+
+        plan_text += (
+            f"Progress: {completed}/{total} steps completed ({progress:.1f}%)\n"
+        )
+        plan_text += f"Status: {status_counts[PlanStepStatus.COMPLETED.value]} completed, {status_counts[PlanStepStatus.IN_PROGRESS.value]} in progress, "
+        plan_text += f"{status_counts[PlanStepStatus.BLOCKED.value]} blocked, {status_counts[PlanStepStatus.NOT_STARTED.value]} not started\n\n"
+        plan_text += "Steps:\n"
+
+        status_marks = PlanStepStatus.get_status_marks()
+
+        for i, (step, status, notes) in enumerate(
+            zip(steps, step_statuses, step_notes)
+        ):
+            # Use status marks to indicate step status
+            status_mark = status_marks.get(
+                status, status_marks[PlanStepStatus.NOT_STARTED.value]
             )
-            plan_text += f"Status: {status_counts[PlanStepStatus.COMPLETED.value]} completed, {status_counts[PlanStepStatus.IN_PROGRESS.value]} in progress, "
-            plan_text += f"{status_counts[PlanStepStatus.BLOCKED.value]} blocked, {status_counts[PlanStepStatus.NOT_STARTED.value]} not started\n\n"
-            plan_text += "Steps:\n"
 
-            status_marks = PlanStepStatus.get_status_marks()
+            plan_text += f"{i}. {status_mark} {step}\n"
+            if notes:
+                plan_text += f"   Notes: {notes}\n"
 
-            for i, (step, status, notes) in enumerate(
-                zip(steps, step_statuses, step_notes)
-            ):
-                # Use status marks to indicate step status
-                status_mark = status_marks.get(
-                    status, status_marks[PlanStepStatus.NOT_STARTED.value]
-                )
-
-                plan_text += f"{i}. {status_mark} {step}\n"
-                if notes:
-                    plan_text += f"   Notes: {notes}\n"
-
-            return plan_text
-        except Exception as e:
-            logger.error(f"Error generating plan text from storage: {e}")
-            return f"Error: Unable to retrieve plan with ID {self.active_plan_id}"
+        return plan_text
 
     async def _finalize_plan(self) -> str:
         """Finalize the plan and provide a summary using the flow's LLM directly."""

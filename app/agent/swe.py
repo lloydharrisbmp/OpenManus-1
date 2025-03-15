@@ -9,7 +9,7 @@ import asyncio
 from app.agent.toolcall import ToolCallAgent
 from app.prompt.financial_planner import NEXT_STEP_TEMPLATE, SYSTEM_PROMPT
 from app.schema import Message
-from app.tool import Bash, StrReplaceEditor, Terminate, ToolCollection
+from app.tool import BashTool, StrReplaceEditor, Terminate, ToolCollection
 from app.tool.financial_tools import (
     AustralianMarketAnalysisTool,
     MarketAnalysisTool,
@@ -18,8 +18,12 @@ from app.tool.financial_tools import (
     TaxOptimizationTool,
 )
 from app.tool.document_analyzer import DocumentAnalyzerTool
-from app.tool.website_generator import WebsiteGeneratorTool
 from app.tool.tool_creator import ToolCreatorTool
+from app.tool.property_analyzer import PropertyAnalyzerTool
+from app.tool.financial_integrations import FinancialIntegrationsTool
+from app.tool.superannuation_analyzer import SuperannuationAnalyzerTool
+from app.tool.web_search import WebSearchTool
+from app.tool.website_generator import WebsiteGeneratorTool
 from app.logger import logger
 
 class ToolExecutionMetrics(BaseModel):
@@ -55,7 +59,7 @@ class FinancialPlanningAgent(ToolCallAgent):
 
     max_steps: int = 5  # Reduced from 30 to 5 for testing purposes
 
-    bash: Bash = Field(default_factory=Bash)
+    bash: BashTool = Field(default_factory=BashTool)
     working_dir: str = "."
 
     current_metrics: Optional[ToolExecutionMetrics] = None
@@ -73,7 +77,7 @@ class FinancialPlanningAgent(ToolCallAgent):
             DocumentAnalyzerTool(),
             WebsiteGeneratorTool(),
             ToolCreatorTool(),
-            Bash(),
+            BashTool(),
             StrReplaceEditor(),
             Terminate()
         ]
@@ -131,9 +135,10 @@ class FinancialPlanningAgent(ToolCallAgent):
             return await super().think()
         
     async def observe(self, observation: str) -> None:
-        """Store the observation for future reference"""
-        await super().observe(observation)
+        """Process an observation and update agent state."""
         self.last_observation = observation
+        if hasattr(self, "update_memory") and callable(self.update_memory):
+            self.update_memory(role="system", content=f"Observation: {observation}")
 
     async def process_message(self, message: str) -> str:
         """Process a message with enhanced tracking and visualization support."""
@@ -204,50 +209,74 @@ class FinancialPlanningAgent(ToolCallAgent):
         return "\n\n".join(formatted_response)
 
     async def execute_tool(self, tool_call) -> str:
-        """Execute tool with enhanced metrics tracking and visualization handling."""
-        try:
-            # Initialize metrics
+        """Execute a tool call and track metrics."""
+        if isinstance(tool_call, dict) and 'name' in tool_call and 'arguments' in tool_call:
+            tool_name = tool_call['name']
+            try:
+                args = json.loads(tool_call['arguments']) if tool_call['arguments'] else {}
+            except json.JSONDecodeError:
+                args = {}
+
+            # Record start of execution
             self.current_metrics = ToolExecutionMetrics(
-                tool_name=tool_call.function.name,
+                tool_name=tool_name,
                 start_time=datetime.now()
             )
-            
-            result = await super().execute_tool(tool_call)
-            
-            # Try to parse result as JSON
+
             try:
-                result_data = json.loads(result)
+                # Find the tool in available_tools
+                tool = None
+                if hasattr(self, 'available_tools') and isinstance(self.available_tools, ToolCollection):
+                    tool = self.available_tools.get_tool(tool_name)
                 
-                # Track visualizations
-                if isinstance(result_data, dict):
-                    if "visualization_path" in result_data:
-                        self.visualization_paths.append(result_data["visualization_path"])
-                    elif "file_url" in result_data:
-                        self.visualization_paths.append(result_data["file_url"])
+                if tool:
+                    result = await tool.execute(**args)
+                    
+                    # Update metrics
+                    if self.current_metrics:
+                        self.current_metrics.end_time = datetime.now()
+                        self.current_metrics.success = True
+                        # Check if result is a string or has a specific attribute
+                        if hasattr(result, 'output'):
+                            response = str(result.output)
+                            self.current_metrics.response_length = len(response)
+                        elif isinstance(result, str):
+                            response = result
+                            self.current_metrics.response_length = len(response)
+                        elif isinstance(result, dict):
+                            response = json.dumps(result)
+                            self.current_metrics.response_length = len(response)
+                            # Check for visualization paths in result
+                            if 'visualization_path' in result or 'chart_path' in result or 'report_path' in result:
+                                path = result.get('visualization_path') or result.get('chart_path') or result.get('report_path')
+                                if path and path not in self.visualization_paths:
+                                    self.visualization_paths.append(path)
+                                    self.current_metrics.has_visualization = True
+                        else:
+                            response = str(result)
+                            self.current_metrics.response_length = len(response)
+                        
+                        self.execution_history.append(self.current_metrics)
+                        self.current_metrics = None
+                    
+                    return f"Tool {tool_name} executed successfully with result: {result}"
+                else:
+                    if self.current_metrics:
+                        self.current_metrics.end_time = datetime.now()
+                        self.current_metrics.success = False
+                        self.current_metrics.error_message = f"Tool {tool_name} not found"
+                        self.execution_history.append(self.current_metrics)
+                        self.current_metrics = None
+                    
+                    return f"Error: Tool {tool_name} not found"
+            except Exception as e:
+                if self.current_metrics:
+                    self.current_metrics.end_time = datetime.now()
+                    self.current_metrics.success = False
+                    self.current_metrics.error_message = str(e)
+                    self.execution_history.append(self.current_metrics)
+                    self.current_metrics = None
                 
-                # Update metrics
-                self.current_metrics.success = result_data.get("status") == "success"
-                self.current_metrics.error_message = result_data.get("message") if not self.current_metrics.success else None
-                
-            except json.JSONDecodeError:
-                # Result is not JSON, just track basic metrics
-                self.current_metrics.success = "error" not in result.lower()
-                
-            self.current_metrics.end_time = datetime.now()
-            self.current_metrics.response_length = len(result)
-            self.current_metrics.has_visualization = bool(self.visualization_paths)
-            
-            # Store metrics
-            self.execution_history.append(self.current_metrics)
-            
-            return result
-            
-        except Exception as e:
-            if self.current_metrics:
-                self.current_metrics.success = False
-                self.current_metrics.error_message = str(e)
-                self.current_metrics.end_time = datetime.now()
-                self.execution_history.append(self.current_metrics)
-            
-            logger.error(f"Error in execute_tool: {str(e)}")
-            return f"Error executing tool: {str(e)}"
+                return f"Error executing tool {tool_name}: {str(e)}"
+        else:
+            return "Invalid tool call format"

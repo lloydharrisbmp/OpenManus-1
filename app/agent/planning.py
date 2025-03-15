@@ -44,8 +44,9 @@ class PlanningAgent(ToolCallAgent):
         """Initialize the agent with a default plan ID and validate required tools."""
         self.active_plan_id = f"plan_{int(time.time())}"
 
-        if "planning" not in self.available_tools.tool_map:
-            self.available_tools.add_tool(PlanningTool())
+        if hasattr(self, 'available_tools') and isinstance(self.available_tools, ToolCollection):
+            if not self.available_tools.get_tool("planning"):
+                self.available_tools.add_tool(PlanningTool())
 
         return self
 
@@ -103,15 +104,22 @@ class PlanningAgent(ToolCallAgent):
         return result
 
     async def get_plan(self) -> str:
-        """Retrieve the current plan status."""
+        """Get the current plan from the planning tool."""
         if not self.active_plan_id:
             return "No active plan. Please create a plan first."
-
-        result = await self.available_tools.execute(
-            name="planning",
-            tool_input={"command": "get", "plan_id": self.active_plan_id},
-        )
-        return result.output if hasattr(result, "output") else str(result)
+        
+        if hasattr(self, 'available_tools') and isinstance(self.available_tools, ToolCollection):
+            planning_tool = self.available_tools.get_tool("planning")
+            if planning_tool:
+                try:
+                    result = await planning_tool.execute(action="get_plan", plan_id=self.active_plan_id)
+                    if isinstance(result, dict) and "plan" in result:
+                        return result["plan"]
+                    return str(result)
+                except Exception as e:
+                    return f"Error retrieving plan: {str(e)}"
+        
+        return "Unable to access planning tool"
 
     async def run(self, request: Optional[str] = None) -> str:
         """Run the agent with an optional initial request."""
@@ -120,40 +128,31 @@ class PlanningAgent(ToolCallAgent):
         return await super().run()
 
     async def update_plan_status(self, tool_call_id: str) -> None:
-        """
-        Update the current plan progress based on completed tool execution.
-        Only marks a step as completed if the associated tool has been successfully executed.
-        """
-        if not self.active_plan_id:
+        """Update the status of a plan step after execution."""
+        if not self.active_plan_id or not tool_call_id:
             return
-
-        if tool_call_id not in self.step_execution_tracker:
-            logger.warning(f"No step tracking found for tool call {tool_call_id}")
-            return
-
-        tracker = self.step_execution_tracker[tool_call_id]
-        if tracker["status"] != "completed":
-            logger.warning(f"Tool call {tool_call_id} has not completed successfully")
-            return
-
-        step_index = tracker["step_index"]
-
-        try:
-            # Mark the step as completed
-            await self.available_tools.execute(
-                name="planning",
-                tool_input={
-                    "command": "mark_step",
-                    "plan_id": self.active_plan_id,
-                    "step_index": step_index,
-                    "step_status": "completed",
-                },
-            )
-            logger.info(
-                f"Marked step {step_index} as completed in plan {self.active_plan_id}"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to update plan status: {e}")
+            
+        if hasattr(self, 'available_tools') and isinstance(self.available_tools, ToolCollection):
+            planning_tool = self.available_tools.get_tool("planning")
+            if not planning_tool:
+                return
+                
+            # Get current step index
+            step_index = await self._get_current_step_index()
+            if step_index is None:
+                return
+                
+            # Mark the current step as completed
+            try:
+                await planning_tool.execute(
+                    action="update_step",
+                    plan_id=self.active_plan_id,
+                    step_index=step_index,
+                    status="completed",
+                    notes=f"Tool call {tool_call_id} executed successfully"
+                )
+            except Exception as e:
+                logger.error(f"Failed to update plan step: {e}")
 
     async def _get_current_step_index(self) -> Optional[int]:
         """
@@ -199,51 +198,24 @@ class PlanningAgent(ToolCallAgent):
             return None
 
     async def create_initial_plan(self, request: str) -> None:
-        """Create an initial plan based on the request."""
-        logger.info(f"Creating initial plan with ID: {self.active_plan_id}")
-
-        messages = [
-            Message.user_message(
-                f"Analyze the request and create a plan with ID {self.active_plan_id}: {request}"
-            )
-        ]
-        self.memory.add_messages(messages)
-        response = await self.llm.ask_tool(
-            messages=messages,
-            system_msgs=[Message.system_message(self.system_prompt)],
-            tools=self.available_tools.to_params(),
-            tool_choice=ToolChoice.AUTO,
-        )
-        assistant_msg = Message.from_tool_calls(
-            content=response.content, tool_calls=response.tool_calls
-        )
-
-        self.memory.add_message(assistant_msg)
-
-        plan_created = False
-        for tool_call in response.tool_calls:
-            if tool_call.function.name == "planning":
-                result = await self.execute_tool(tool_call)
-                logger.info(
-                    f"Executed tool {tool_call.function.name} with result: {result}"
+        """Create the initial plan based on the user request."""
+        if hasattr(self, 'available_tools') and isinstance(self.available_tools, ToolCollection):
+            planning_tool = self.available_tools.get_tool("planning")
+            if not planning_tool:
+                return
+                
+            try:
+                # Create a new plan
+                result = await planning_tool.execute(
+                    action="create_plan", 
+                    task=request,
+                    tools=[tool.to_param() for tool in self.available_tools if hasattr(tool, 'to_param') and callable(tool.to_param)]
                 )
-
-                # Add tool response to memory
-                tool_msg = Message.tool_message(
-                    content=result,
-                    tool_call_id=tool_call.id,
-                    name=tool_call.function.name,
-                )
-                self.memory.add_message(tool_msg)
-                plan_created = True
-                break
-
-        if not plan_created:
-            logger.warning("No plan created from initial request")
-            tool_msg = Message.assistant_message(
-                "Error: Parameter `plan_id` is required for command: create"
-            )
-            self.memory.add_message(tool_msg)
+                
+                if isinstance(result, dict) and "plan_id" in result:
+                    self.active_plan_id = result["plan_id"]
+            except Exception as e:
+                logger.error(f"Failed to create initial plan: {e}")
 
 
 async def main():

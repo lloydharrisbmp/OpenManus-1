@@ -3,7 +3,7 @@ from typing import Any, List, Literal, Optional, Union, Dict
 from datetime import datetime, date
 import re
 
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, field_validator, root_validator, ConfigDict
 
 class Role(str, Enum):
     """Message role options"""
@@ -76,11 +76,11 @@ class Message(BaseModel):
             )
 
     def to_dict(self) -> dict:
-        """Convert message to dictionary format"""
+        """Convert message to dictionary format for API calls"""
         message = {"role": self.role}
         if self.content is not None:
             message["content"] = self.content
-        if self.tool_calls is not None:
+        if self.tool_calls is not None and isinstance(self.tool_calls, list):
             message["tool_calls"] = [tool_call.dict() for tool_call in self.tool_calls]
         if self.name is not None:
             message["name"] = self.name
@@ -135,8 +135,8 @@ class Memory(BaseModel):
         """Add a message to memory"""
         self.messages.append(message)
         # Optional: Implement message limit
-        if len(self.messages) > self.max_messages:
-            self.messages = self.messages[-self.max_messages :]
+        if self.max_messages is not None and len(self.messages) > self.max_messages:
+            self.messages = self.messages[-self.max_messages:]
 
     def add_messages(self, messages: List[Message]) -> None:
         """Add multiple messages to memory"""
@@ -178,10 +178,10 @@ class TaxYear(BaseModel):
     start_year: int
     end_year: int
 
-    @validator('end_year')
-    def validate_year_range(cls, v, values):
-        if 'start_year' in values and v != values['start_year'] + 1:
-            raise ValueError(f"End year must be exactly one year after start year, got {values['start_year']} and {v}")
+    @field_validator('end_year')
+    def validate_year_range(cls, v, info):
+        if 'start_year' in info.data and v != info.data['start_year'] + 1:
+            raise ValueError(f"End year must be exactly one year after start year, got {info.data['start_year']} and {v}")
         return v
 
     def __str__(self):
@@ -197,7 +197,7 @@ class IncomeStream(BaseModel):
     tax_deductible: bool = False
     description: Optional[str] = None
 
-    @validator('amount')
+    @field_validator('amount')
     def validate_amount(cls, v):
         if v < 0:
             raise ValueError("Amount cannot be negative")
@@ -356,7 +356,7 @@ class ClientProfile(BaseModel):
     goals: List[FinancialGoal] = Field(default_factory=list)
     portfolios: List[Portfolio] = Field(default_factory=list)
     
-    @validator('tax_file_number')
+    @field_validator('tax_file_number')
     def validate_tfn(cls, v):
         if v is not None:
             # Remove spaces for validation

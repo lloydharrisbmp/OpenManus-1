@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional, List, TypedDict
 import logging
 import asyncio
-from pydantic import BaseModel, validator, BaseSettings
+from pydantic import BaseModel, field_validator, ConfigDict
 import aiohttp
 from collections import deque
 import contextlib
@@ -10,14 +10,17 @@ from dataclasses import dataclass
 from typing import Set
 
 from app.agent.base import BaseAgent
-from app.tool import (
-    MarketDataTool,
-    PropertyAnalysisTool,
-    SuperannuationAnalysisTool,
-    EstateAnalysisTool,
-    InsuranceAnalysisTool,
-    GoogleSearch
+# Import tools from the available tools directory
+from app.tool.financial_tools import (
+    MarketAnalysisTool,
+    AustralianMarketAnalysisTool,
+    TaxOptimizationTool,
+    PortfolioOptimizationTool
 )
+from app.tool.google_search import GoogleSearch
+from app.tool.property_analyzer import PropertyAnalyzer
+from app.tool.superannuation_analyzer import SuperannuationAnalyzer
+from app.tool.document_analyzer import DocumentAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ class ToolCall(BaseModel):
     retry_attempts: int = 1
     retry_delay: float = 1.0
 
-    @validator('retry_attempts')
+    @field_validator('retry_attempts')
     def validate_attempts(cls, v):
         if v < 1:
             raise ValueError("retry_attempts must be >= 1")
@@ -39,23 +42,20 @@ class ToolResult(BaseModel):
     error: Optional[str]
     success: bool
 
-    @validator('result', 'error')
-    def validate_result_error(cls, v, values):
-        if values.get('success') and not v:
-            raise ValueError("Success requires result")
-        if not values.get('success') and not v:
-            raise ValueError("Failure requires error message")
+    @field_validator('result', 'error')
+    def validate_result_error(cls, v, values, info):
+        if 'success' in info.data:
+            success = info.data.get('success')
+            if success and not v and info.field_name == 'result':
+                raise ValueError("Success requires result")
+            if not success and not v and info.field_name == 'error':
+                raise ValueError("Failure requires error message")
         return v
 
-class AgentConfig(BaseSettings):
-    concurrency_limit: int = 3
-    default_timeout: float = 30.0
-    max_retries: int = 3
-    retry_delay: float = 1.0
-    context_history_size: int = 100
-    
-    class Config:
-        env_prefix = 'FINANCIAL_AGENT_'
+class AgentConfig(BaseModel):
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True
+    )
 
 @dataclass
 class ToolDependency:
@@ -69,12 +69,14 @@ class FinancialPlanningAgent(BaseAgent):
         self.config = config or AgentConfig()
         super().__init__(groq_api_key=None)
         self.available_tools = [
-            MarketDataTool(),
-            PropertyAnalysisTool(),
-            SuperannuationAnalysisTool(),
-            EstateAnalysisTool(),
-            InsuranceAnalysisTool(),
-            GoogleSearch()
+            MarketAnalysisTool(),
+            AustralianMarketAnalysisTool(),
+            TaxOptimizationTool(),
+            PortfolioOptimizationTool(),
+            GoogleSearch(),
+            PropertyAnalyzer(),
+            SuperannuationAnalyzer(),
+            DocumentAnalyzer()
         ]
         # Validate tools after initialization
         if not self.validate_tools():

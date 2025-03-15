@@ -1,5 +1,5 @@
 from app.tool.base import BaseTool
-from app.tool.bash import Bash
+from app.tool.bash import BashTool
 from app.tool.create_chat_completion import CreateChatCompletion
 from app.tool.planning import PlanningTool
 from app.tool.str_replace_editor import StrReplaceEditor
@@ -19,7 +19,7 @@ from app.tool.tool_creator import ToolCreatorTool
 
 __all__ = [
     "BaseTool",
-    "Bash",
+    "BashTool",
     "Terminate",
     "StrReplaceEditor",
     "ToolCollection",

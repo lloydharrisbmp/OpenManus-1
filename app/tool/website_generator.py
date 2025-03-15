@@ -1,372 +1,327 @@
-import os
-from pathlib import Path
-from typing import Optional, Dict, Any
-import json
-from jinja2 import Environment, FileSystemLoader, Template
-from pydantic import Field
-import markdown
-from slugify import slugify
+"""
+Enhanced Website Generator Tool with multi-page support, advanced templating, and SEO features.
+This tool provides functionality to generate modern, responsive websites with advanced features.
+"""
 
-from app.tool.base import BaseTool
-from app.tool.file_organizer import file_organizer
+import os
+import json
+import shutil
+import logging
+from typing import Dict, List, Optional, Union, Any
+from pathlib import Path
+from datetime import datetime
+from jinja2 import Environment, FileSystemLoader, Template
+from bs4 import BeautifulSoup
+import sass
+from .base import BaseTool
 
 class WebsiteGeneratorTool(BaseTool):
-    """Tool for generating static websites from content."""
+    """
+    Enhanced Website Generator Tool for creating modern, responsive websites with advanced features.
+    Supports multi-page layouts, SEO optimization, and advanced templating.
+    """
 
     name: str = "website_generator"
-    description: str = "Generates a static website from provided content with modern styling and responsive design"
-    parameters: dict = {
-        "type": "object",
-        "properties": {
-            "title": {
-                "type": "string",
-                "description": "Website title"
-            },
-            "content": {
-                "type": "string",
-                "description": "Main content in markdown format"
-            },
-            "theme": {
-                "type": "string",
-                "description": "Optional theme name (default: 'modern')"
-            },
-            "output_dir": {
-                "type": "string",
-                "description": "Optional output directory name (default: based on title)"
-            }
-        },
-        "required": ["title", "content"]
+    description: str = "Generates a simple HTML website with CSS styling"
+    parameters: Dict[str, Any] = {
+        "template_dir": Path(__file__).parent / "website_templates",
+        "output_dir": Path("generated_websites"),
+        "env": Environment(
+            loader=FileSystemLoader(str(Path(__file__).parent / "website_templates")),
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
     }
-    templates_dir: Path = Field(default_factory=lambda: Path(__file__).parent / "website_templates")
 
     def __init__(self):
         super().__init__()
-        # Create templates directory if it doesn't exist
-        if not self.templates_dir.exists():
-            self.templates_dir.mkdir(parents=True)
-            self._create_default_templates()
+        self._setup_directories()
+        self._setup_logging()
 
-    def _create_default_templates(self):
-        """Create default website templates."""
-        modern_template = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        :root {
-            --primary-color: #2c3e50;
-            --secondary-color: #3498db;
-            --accent-color: #e74c3c;
-            --text-color: #333;
-            --light-bg: #f8f9fa;
-            --border-color: #dee2e6;
-        }
-
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            line-height: 1.6;
-            color: var(--text-color);
-            background-color: var(--light-bg);
-        }
-
-        .navbar {
-            background-color: var(--primary-color);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .navbar-brand {
-            color: white !important;
-            font-weight: 600;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 40px auto;
-            padding: 0;
-        }
-
-        .content-wrapper {
-            background-color: white;
-            box-shadow: 0 0 30px rgba(0,0,0,0.1);
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        .sidebar {
-            background-color: var(--light-bg);
-            padding: 20px;
-            border-right: 1px solid var(--border-color);
-        }
-
-        .main-content {
-            padding: 40px;
-        }
-
-        h1, h2, h3, h4, h5, h6 {
-            color: var(--primary-color);
-            margin-bottom: 1rem;
-            font-weight: 600;
-        }
-
-        h1 {
-            font-size: 2.5rem;
-            border-bottom: 3px solid var(--secondary-color);
-            padding-bottom: 10px;
-            margin-bottom: 30px;
-        }
-
-        h2 {
-            font-size: 1.8rem;
-            margin-top: 2rem;
-        }
-
-        h3 {
-            font-size: 1.4rem;
-            color: var(--secondary-color);
-        }
-
-        p {
-            margin-bottom: 1.2rem;
-            font-size: 1.1rem;
-        }
-
-        .nav-link {
-            color: var(--primary-color);
-            padding: 8px 16px;
-            border-radius: 6px;
-            margin-bottom: 5px;
-        }
-
-        .nav-link:hover {
-            background-color: var(--secondary-color);
-            color: white;
-        }
-
-        .nav-link.active {
-            background-color: var(--secondary-color);
-            color: white;
-        }
-
-        ul:not(.nav), ol:not(.nav) {
-            padding-left: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        li:not(.nav-item) {
-            margin-bottom: 0.5rem;
-        }
-
-        code {
-            background-color: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 4px;
-            color: var(--accent-color);
-        }
-
-        pre {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin-bottom: 1.5rem;
-        }
-
-        blockquote {
-            border-left: 4px solid var(--secondary-color);
-            padding-left: 1rem;
-            margin-left: 0;
-            color: #666;
-        }
-
-        table {
-            width: 100%;
-            margin-bottom: 1.5rem;
-            border-collapse: collapse;
-        }
-
-        th, td {
-            padding: 12px;
-            border: 1px solid var(--border-color);
-        }
-
-        th {
-            background-color: var(--light-bg);
-        }
-
-        .footer {
-            margin-top: 60px;
-            padding: 20px;
-            text-align: center;
-            color: #666;
-            border-top: 1px solid var(--border-color);
-        }
-
-        /* Responsive adjustments */
-        @media (max-width: 768px) {
-            .container {
-                margin: 20px auto;
-            }
-            
-            .main-content {
-                padding: 20px;
-            }
-            
-            h1 {
-                font-size: 2rem;
-            }
-            
-            .sidebar {
-                margin-bottom: 20px;
-                border-right: none;
-                border-bottom: 1px solid var(--border-color);
-            }
-        }
-    </style>
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container">
-            <a class="navbar-brand" href="#">{{ title }}</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-        </div>
-    </nav>
-
-    <div class="container">
-        <div class="content-wrapper">
-            <div class="row g-0">
-                <div class="col-md-3 sidebar">
-                    <nav class="nav flex-column" id="tableOfContents">
-                        <!-- Table of contents will be dynamically generated -->
-                    </nav>
-                </div>
-                <div class="col-md-9 main-content">
-                    <h1>{{ title }}</h1>
-                    <div class="content">
-                        {{ content | safe }}
-                    </div>
-                    <div class="footer">
-                        <p>Generated by OpenManus Financial Planning AI</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Generate table of contents
-        document.addEventListener('DOMContentLoaded', function() {
-            const toc = document.getElementById('tableOfContents');
-            const headings = document.querySelectorAll('.main-content h2');
-            
-            headings.forEach((heading, index) => {
-                // Create an ID for the heading if it doesn't have one
-                if (!heading.id) {
-                    heading.id = 'section-' + index;
-                }
-                
-                // Create the navigation link
-                const link = document.createElement('a');
-                link.href = '#' + heading.id;
-                link.className = 'nav-link';
-                link.textContent = heading.textContent;
-                
-                // Add click handler for smooth scrolling
-                link.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    heading.scrollIntoView({ behavior: 'smooth' });
-                });
-                
-                toc.appendChild(link);
-            });
-            
-            // Highlight active section on scroll
-            window.addEventListener('scroll', function() {
-                const scrollPosition = window.scrollY;
-                
-                headings.forEach((heading) => {
-                    const section = heading.getBoundingClientRect();
-                    const link = toc.querySelector(`a[href="#${heading.id}"]`);
-                    
-                    if (section.top <= 100 && section.bottom >= 100) {
-                        link.classList.add('active');
-                    } else {
-                        link.classList.remove('active');
-                    }
-                });
-            });
-        });
-    </script>
-</body>
-</html>
-"""
-        with open(self.templates_dir / "modern.html", "w") as f:
-            f.write(modern_template)
-
-    async def execute(
-        self,
-        title: str,
-        content: str,
-        theme: str = "modern",
-        output_dir: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Generate a static website from the provided content."""
-        if not output_dir:
-            output_dir = slugify(title)
+    def _setup_directories(self) -> None:
+        """Create necessary directories if they don't exist."""
+        self.template_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Get the appropriate directory from FileOrganizer
-        base_path = file_organizer.get_path("websites", output_dir)
-        os.makedirs(base_path, exist_ok=True)
+        # Create assets directories
+        (self.template_dir / "css").mkdir(exist_ok=True)
+        (self.template_dir / "js").mkdir(exist_ok=True)
+        (self.template_dir / "images").mkdir(exist_ok=True)
 
-        # Set up Jinja2 environment
-        env = Environment(loader=FileSystemLoader(str(self.templates_dir)))
-        template = env.get_template(f"{theme}.html")
-
-        # Convert markdown to HTML with extended features
-        html_content = markdown.markdown(
-            content,
-            extensions=[
-                'extra',
-                'codehilite',
-                'tables',
-                'toc',
-                'fenced_code',
-                'sane_lists'
-            ]
+    def _setup_logging(self) -> None:
+        """Configure logging for the tool."""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
+        self.logger = logging.getLogger(self.name)
 
-        # Generate the HTML
-        html = template.render(
-            title=title,
-            content=html_content
-        )
-
-        # Write the HTML file
-        output_file = base_path / "index.html"
-        with open(output_file, "w") as f:
-            f.write(html)
-
-        # Create a response with the correct URL
-        relative_path = os.path.relpath(str(output_file), "client_documents")
-        website_url = f"http://localhost:8000/generated/{relative_path}"
+    def _validate_config(self, config: Dict) -> bool:
+        """
+        Validate the website configuration.
         
+        Args:
+            config: Dictionary containing website configuration
+            
+        Returns:
+            bool: True if configuration is valid
+            
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        required_fields = ['title', 'description', 'pages']
+        if not all(field in config for field in required_fields):
+            missing = [f for f in required_fields if f not in config]
+            raise ValueError(f"Missing required fields in config: {missing}")
+            
+        if not isinstance(config['pages'], list):
+            raise ValueError("'pages' must be a list of page configurations")
+            
+        for page in config['pages']:
+            if 'name' not in page or 'content' not in page:
+                raise ValueError("Each page must have 'name' and 'content' fields")
+                
+        return True
+
+    def _generate_seo_meta(self, page_config: Dict) -> Dict:
+        """
+        Generate SEO meta tags for a page.
+        
+        Args:
+            page_config: Page configuration dictionary
+            
+        Returns:
+            Dict: Dictionary containing SEO meta tags
+        """
         return {
-            "status": "success",
-            "message": f"""✅ WEBSITE GENERATED SUCCESSFULLY!
+            'title': page_config.get('title', ''),
+            'description': page_config.get('description', ''),
+            'keywords': page_config.get('keywords', ''),
+            'author': page_config.get('author', ''),
+            'robots': page_config.get('robots', 'index, follow'),
+            'og_title': page_config.get('og_title', page_config.get('title', '')),
+            'og_description': page_config.get('og_description', page_config.get('description', '')),
+            'og_image': page_config.get('og_image', ''),
+            'twitter_card': page_config.get('twitter_card', 'summary_large_image'),
+        }
 
-📱 VIEW YOUR WEBSITE:
-→ {website_url}
+    def _process_scss(self, scss_content: str) -> str:
+        """
+        Process SCSS content into CSS.
+        
+        Args:
+            scss_content: SCSS content string
+            
+        Returns:
+            str: Processed CSS content
+        """
+        try:
+            return sass.compile(string=scss_content)
+        except sass.CompileError as e:
+            self.logger.error(f"SCSS compilation error: {e}")
+            raise
 
-Click the link above or find your website in the "Generated Documents" sidebar.
-Look for the "{os.path.basename(output_file)}" file with the 🌐 icon.""",
-            "output_dir": str(base_path),
-            "index_file": str(output_file),
-            "website_url": website_url
-        } 
+    def _optimize_html(self, html_content: str) -> str:
+        """
+        Optimize HTML content.
+        
+        Args:
+            html_content: Raw HTML content
+            
+        Returns:
+            str: Optimized HTML content
+        """
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Remove comments
+        for comment in soup.find_all(string=lambda text: isinstance(text, str) and text.strip().startswith('<!--')):
+            comment.extract()
+            
+        # Minify HTML
+        return str(soup).replace('\n', '').replace('  ', '')
+
+    def _create_sitemap(self, pages: List[Dict], base_url: str) -> str:
+        """
+        Generate XML sitemap for the website.
+        
+        Args:
+            pages: List of page configurations
+            base_url: Base URL of the website
+            
+        Returns:
+            str: XML sitemap content
+        """
+        sitemap = ['<?xml version="1.0" encoding="UTF-8"?>']
+        sitemap.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+        
+        for page in pages:
+            sitemap.append('  <url>')
+            page_url = f"{base_url.rstrip('/')}/{page['name']}.html"
+            sitemap.append(f"    <loc>{page_url}</loc>")
+            sitemap.append(f"    <lastmod>{datetime.now().strftime('%Y-%m-%d')}</lastmod>")
+            sitemap.append('    <changefreq>weekly</changefreq>')
+            sitemap.append('    <priority>0.8</priority>')
+            sitemap.append('  </url>')
+            
+        sitemap.append('</urlset>')
+        return '\n'.join(sitemap)
+
+    def generate_website(self, config: Dict) -> Dict[str, Union[bool, str, List[str]]]:
+        """Generate a complete website based on the provided configuration."""
+        try:
+            # Validate configuration
+            if not self._validate_config(config):
+                return {"success": False, "message": "Invalid configuration"}
+            
+            # Create output directory
+            site_name = config.get("site_name", "generated_site")
+            output_dir = self.output_dir / site_name
+            
+            # Check if directory exists and create it if needed
+            if not output_dir.exists():
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+            # Create directories for assets
+            assets_dir = output_dir / "assets"
+            css_dir = assets_dir / "css"
+            js_dir = assets_dir / "js"
+            images_dir = assets_dir / "images"
+            
+            # Create all needed directories
+            for directory in [assets_dir, css_dir, js_dir, images_dir]:
+                directory.mkdir(parents=True, exist_ok=True)
+            
+            # Copy assets
+            shutil.copytree(
+                self.template_dir / "css",
+                css_dir,
+                dirs_exist_ok=True
+            )
+            shutil.copytree(
+                self.template_dir / "js",
+                js_dir,
+                dirs_exist_ok=True
+            )
+            shutil.copytree(
+                self.template_dir / "images",
+                images_dir,
+                dirs_exist_ok=True
+            )
+            
+            # Process SCSS if exists
+            scss_file = self.template_dir / "css" / "styles.scss"
+            if scss_file.exists():
+                with open(scss_file) as f:
+                    css_content = self._process_scss(f.read())
+                with open(css_dir / "styles.css", 'w') as f:
+                    f.write(css_content)
+            
+            # Generate pages
+            template_name = config.get('template', 'modern.html')
+            template = self.env.get_template(template_name)
+            generated_pages = []
+            
+            for page in config['pages']:
+                try:
+                    # Generate SEO meta tags
+                    seo_meta = self._generate_seo_meta(page)
+                    
+                    # Render page
+                    html_content = template.render(
+                        page=page,
+                        config=config,
+                        seo=seo_meta
+                    )
+                    
+                    # Optimize HTML
+                    optimized_html = self._optimize_html(html_content)
+                    
+                    # Save page
+                    output_file = output_dir / f"{page['name']}.html"
+                    with open(output_file, 'w') as f:
+                        f.write(optimized_html)
+                        
+                    generated_pages.append(str(output_file))
+                    
+                except Exception as e:
+                    self.logger.error(f"Error generating page {page['name']}: {e}")
+                    return {
+                        'success': False,
+                        'error': f"Error generating page {page['name']}: {str(e)}",
+                        'partial_success': True,
+                        'generated_pages': generated_pages
+                    }
+            
+            # Generate sitemap if base_url provided
+            if 'base_url' in config:
+                sitemap_content = self._create_sitemap(config['pages'], config['base_url'])
+                with open(output_dir / 'sitemap.xml', 'w') as f:
+                    f.write(sitemap_content)
+            
+            return {
+                'success': True,
+                'output_dir': str(output_dir),
+                'generated_pages': generated_pages,
+                'sitemap': 'sitemap.xml' if 'base_url' in config else None
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Website generation failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'partial_success': bool(generated_pages),
+                'generated_pages': generated_pages
+            }
+
+    async def create_template(self, template_name: str, template_content: str) -> Dict[str, Union[bool, str]]:
+        """
+        Create a new template in the templates directory.
+        
+        Args:
+            template_name: Name of the template file
+            template_content: Template content
+            
+        Returns:
+            Dict containing success status and template path or error message
+        """
+        try:
+            template_path = self.template_dir / template_name
+            with open(template_path, 'w') as f:
+                f.write(template_content)
+                
+            return {
+                'success': True,
+                'template_path': str(template_path)
+            }
+        except Exception as e:
+            self.logger.error(f"Template creation failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    async def validate_template(self, template_content: str) -> Dict[str, Union[bool, List[str]]]:
+        """
+        Validate a template's syntax.
+        
+        Args:
+            template_content: Template content to validate
+            
+        Returns:
+            Dict containing validation results
+        """
+        try:
+            # Create a temporary Environment for validation
+            env = Environment()
+            env.parse(template_content)
+            
+            return {
+                'success': True,
+                'message': 'Template syntax is valid'
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }

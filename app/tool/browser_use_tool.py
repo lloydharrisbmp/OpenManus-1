@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from browser_use import Browser as BrowserUseBrowser
 from browser_use import BrowserConfig
@@ -108,47 +108,41 @@ class BrowserUseTool(BaseTool):
         if self.browser is None:
             browser_config_kwargs = {"headless": False}
 
-            if config.browser_config:
+            if hasattr(config, 'browser_config') and config.browser_config:
                 from browser_use.browser.browser import ProxySettings
 
                 # handle proxy settings.
-                if config.browser_config.proxy and config.browser_config.proxy.server:
+                proxy_config = getattr(config.browser_config, 'proxy', None)
+                if proxy_config and hasattr(proxy_config, 'server'):
                     browser_config_kwargs["proxy"] = ProxySettings(
-                        server=config.browser_config.proxy.server,
-                        username=config.browser_config.proxy.username,
-                        password=config.browser_config.proxy.password,
+                        server=proxy_config.server,
+                        username=getattr(proxy_config, 'username', None),
+                        password=getattr(proxy_config, 'password', None),
                     )
 
-                browser_attrs = [
-                    "headless",
-                    "disable_security",
-                    "extra_chromium_args",
-                    "chrome_instance_path",
-                    "wss_url",
-                    "cdp_url",
-                ]
-
-                for attr in browser_attrs:
-                    value = getattr(config.browser_config, attr, None)
-                    if value is not None:
-                        if not isinstance(value, list) or value:
-                            browser_config_kwargs[attr] = value
+                # Set additional browser configuration options
+                if hasattr(config.browser_config, 'headless'):
+                    browser_config_kwargs["headless"] = config.browser_config.headless
+                if hasattr(config.browser_config, 'extra_chromium_args'):
+                    browser_config_kwargs["extra_chromium_args"] = config.browser_config.extra_chromium_args
+                if hasattr(config.browser_config, 'chrome_instance_path'):
+                    browser_config_kwargs["chrome_instance_path"] = config.browser_config.chrome_instance_path
+                if hasattr(config.browser_config, 'wss_url'):
+                    browser_config_kwargs["wss_url"] = config.browser_config.wss_url
 
             self.browser = BrowserUseBrowser(BrowserConfig(**browser_config_kwargs))
 
         if self.context is None:
-            context_config = BrowserContextConfig()
+            context_config = {}
+            if hasattr(config, 'browser_config') and config.browser_config:
+                context_config_obj = getattr(config.browser_config, 'new_context_config', {})
+                if context_config_obj:
+                    context_config = context_config_obj
 
-            # if there is context config in the config, use it.
-            if (
-                config.browser_config
-                and hasattr(config.browser_config, "new_context_config")
-                and config.browser_config.new_context_config
-            ):
-                context_config = config.browser_config.new_context_config
-
-            self.context = await self.browser.new_context(context_config)
-            self.dom_service = DomService(await self.context.get_current_page())
+            self.context = await self.browser.new_context(
+                config=BrowserContextConfig(**context_config)
+            )
+            self.dom_service = DomService(self.context)
 
         return self.context
 

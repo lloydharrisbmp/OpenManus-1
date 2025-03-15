@@ -15,7 +15,7 @@ from fastapi import WebSocket, WebSocketDisconnect, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.logger import logger
-from app.web.auth import get_current_user
+from app.web.auth import get_current_active_user as get_current_user
 from app.services.cache_service import cache_service
 
 

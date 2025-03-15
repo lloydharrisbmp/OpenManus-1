@@ -1,8 +1,11 @@
 import asyncio
 import os
-from typing import Optional
+import signal
+import sys
+from typing import Optional, Dict, Any
+import threading
 
-from app.exceptions import ToolError
+from app.exceptions import ToolError, SessionError, TimeoutError
 from app.tool.base import BaseTool, CLIResult, ToolResult
 
 
@@ -16,8 +19,9 @@ _BASH_DESCRIPTION = """Execute a bash command in the terminal.
 class _BashSession:
     """A session of a bash shell."""
 
-    _started: bool
-    _process: asyncio.subprocess.Process
+    _started: bool = False
+    _process: Optional[asyncio.subprocess.Process] = None
+    _timed_out: bool = False
 
     command: str = "/bin/bash"
     _output_delay: float = 0.2  # seconds
@@ -26,6 +30,7 @@ class _BashSession:
 
     def __init__(self):
         self._started = False
+        self._process = None
         self._timed_out = False
 
     async def start(self):
@@ -113,12 +118,12 @@ class _BashSession:
         return CLIResult(output=output, error=error)
 
 
-class Bash(BaseTool):
-    """A tool for executing bash commands"""
-
+class BashTool(BaseTool):
+    """Tool for running bash commands."""
+    
     name: str = "bash"
-    description: str = _BASH_DESCRIPTION
-    parameters: dict = {
+    description: str = "Run a bash command and return its output."
+    parameters: Dict[str, Any] = {
         "type": "object",
         "properties": {
             "command": {
@@ -153,6 +158,6 @@ class Bash(BaseTool):
 
 
 if __name__ == "__main__":
-    bash = Bash()
+    bash = BashTool()
     rst = asyncio.run(bash.execute("ls -l"))
     print(rst)

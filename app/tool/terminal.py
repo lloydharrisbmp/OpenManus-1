@@ -1,21 +1,19 @@
 import asyncio
 import os
+import re
 import shlex
-from typing import Optional
+import shutil
+from typing import Optional, Union, Dict, Any
 
 from app.tool.base import BaseTool, CLIResult
 
 
-class Terminal(BaseTool):
-    name: str = "execute_command"
-    description: str = """Request to execute a CLI command on the system.
-Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task.
-You must tailor your command to the user's system and provide a clear explanation of what the command does.
-Prefer to execute complex CLI commands over creating executable scripts, as they are more flexible and easier to run.
-Commands will be executed in the current working directory.
-Note: You MUST append a `sleep 0.05` to the end of the command for commands that will complete in under 50ms, as this will circumvent a known issue with the terminal tool where it will sometimes not return the output when the command completes too quickly.
-"""
-    parameters: dict = {
+class TerminalTool(BaseTool):
+    """Tool for running terminal commands."""
+    
+    name: str = "terminal"
+    description: str = "Execute a terminal command and return the output"
+    parameters: Dict[str, Any] = {
         "type": "object",
         "properties": {
             "command": {
@@ -34,54 +32,58 @@ Note: You MUST append a `sleep 0.05` to the end of the command for commands that
         Execute a terminal command asynchronously with persistent context.
 
         Args:
-            command (str): The terminal command to execute.
+            command: The command to execute.
 
         Returns:
-            str: The output, and error of the command execution.
+            CLIResult: The result of the command execution.
         """
-        # Split the command by & to handle multiple commands
-        commands = [cmd.strip() for cmd in command.split("&") if cmd.strip()]
-        final_output = CLIResult(output="", error="")
+        async with self.lock:
+            # Handle cd commands specially to maintain directory state
+            if command.strip().startswith("cd "):
+                return await self._handle_cd_command(command)
 
-        for cmd in commands:
-            sanitized_command = self._sanitize_command(cmd)
+            # Sanitize the command
+            command = self._sanitize_command(command)
 
-            # Handle 'cd' command internally
-            if sanitized_command.lstrip().startswith("cd "):
-                result = await self._handle_cd_command(sanitized_command)
-            else:
-                async with self.lock:
-                    try:
-                        self.process = await asyncio.create_subprocess_shell(
-                            sanitized_command,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
-                            cwd=self.current_path,
-                        )
-                        stdout, stderr = await self.process.communicate()
-                        result = CLIResult(
-                            output=stdout.decode().strip(),
-                            error=stderr.decode().strip(),
-                        )
-                    except Exception as e:
-                        result = CLIResult(output="", error=str(e))
-                    finally:
-                        self.process = None
-
-            # Combine outputs
-            if result.output:
-                final_output.output += (
-                    (result.output + "\n") if final_output.output else result.output
-                )
-            if result.error:
-                final_output.error += (
-                    (result.error + "\n") if final_output.error else result.error
+            try:
+                # Create subprocess
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=self.current_path,
+                    shell=True,
                 )
 
-        # Remove trailing newlines
-        final_output.output = final_output.output.rstrip()
-        final_output.error = final_output.error.rstrip()
-        return final_output
+                # Initialize result here to ensure it's defined
+                result = CLIResult(exit_code=-1, output="Command timed out")
+                
+                try:
+                    # Wait for the process to complete with timeout
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(), timeout=600
+                    )
+                    
+                    # Decode the output
+                    stdout_str = stdout.decode("utf-8", errors="replace")
+                    stderr_str = stderr.decode("utf-8", errors="replace")
+                    
+                    # Create the result
+                    result = CLIResult(
+                        exit_code=process.returncode,
+                        output=stdout_str + (
+                            f"\nError: {stderr_str}" if stderr_str.strip() else ""
+                        ),
+                    )
+                except asyncio.TimeoutError:
+                    # Handle timeout by killing the process
+                    process.kill()
+                    result = CLIResult(exit_code=-1, output="Command timed out")
+                
+                return result
+            
+            except Exception as e:
+                return CLIResult(exit_code=-1, output=f"Error executing command: {str(e)}")
 
     async def execute_in_env(self, env_name: str, command: str) -> CLIResult:
         """
